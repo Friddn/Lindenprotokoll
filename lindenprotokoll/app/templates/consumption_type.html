@@ -1,0 +1,6 @@
+{% extends "base.html" %}{% block content %}
+<div class="card"><h2>Verbrauch</h2>
+<a class="big-button link-button" href="{{ url_for('consumption_electricity') }}">⚡ Strom</a>
+<a class="big-button link-button" href="{{ url_for('consumption_water') }}">💧 Wasser</a>
+<a class="big-button link-button" href="{{ url_for('consumption_fuel') }}">🚗 Auto</a>
+</div>{% endblock %}

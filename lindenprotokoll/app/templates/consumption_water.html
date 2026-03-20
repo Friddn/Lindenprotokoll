@@ -1,0 +1,9 @@
+{% extends "base.html" %}{% block content %}
+<div class="card"><h2>Wasser</h2><form method="post">
+<label>Wasser Zählerstand (m³)</label><input type="number" name="water_meter_m3" min="0" max="99999" step="1" required>
+<label>Freitext</label><textarea name="notes" rows="3"></textarea>
+<label>Datum</label><input type="date" name="date" value="{{ date_value }}" required>
+<label>Uhrzeit</label><input type="time" name="time" value="{{ time_value }}" required>
+<button class="big-button" type="submit" name="save_mode" value="back">Speichern</button>
+<button class="secondary-button" type="submit" name="save_mode" value="stay">Speichern + weiterer Eintrag</button>
+</form></div>{% endblock %}

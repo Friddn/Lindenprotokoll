@@ -1,0 +1,10 @@
+{% extends "base.html" %}{% block content %}
+<div class="card"><h2>Medikamente</h2>
+<form method="post" action="{{ url_for('illness_medication_save') }}">
+<div class="list">{% for med in medications %}<label class="option"><input type="checkbox" name="medication_ids" value="{{ med.medication_id }}"><span>{{ med.medication_name }}</span></label>{% endfor %}</div>
+<label>Freitext (z. B. Dosis)</label><textarea name="notes" rows="4"></textarea>
+<label>Datum</label><input type="date" name="date" value="{{ date_value }}" required>
+<label>Uhrzeit</label><input type="time" name="time" value="{{ time_value }}" required>
+<button class="big-button" type="submit">Speichern</button></form><hr>
+<form method="post"><label>Neues Medikament hinzufügen</label><input type="text" name="new_medication_name"><button class="secondary-button" type="submit">Hinzufügen</button></form>
+</div>{% endblock %}

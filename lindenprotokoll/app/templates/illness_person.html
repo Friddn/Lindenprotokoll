@@ -1,0 +1,8 @@
+{% extends "base.html" %}{% block content %}
+<div class="card"><h2>Krank – Person</h2>
+<form method="post"><div class="list">
+{% for p in people %}
+<label class="option"><input type="radio" name="person_id" value="{{ p.person_id }}" {% if default_person_id == p.person_id %}checked{% endif %} required><span>{{ p.display_name }}</span></label>
+{% endfor %}
+</div><button class="big-button" type="submit">Weiter</button></form></div>
+{% endblock %}

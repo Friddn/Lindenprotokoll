@@ -1,0 +1,13 @@
+{% extends "base.html" %}{% block content %}
+<div class="card">
+  <h2>Start</h2>
+  <form method="post">
+    <label>Datum</label><input type="date" name="date" value="{{ date_value }}" required>
+    <label>Uhrzeit</label><input type="time" name="time" value="{{ time_value }}" required>
+    <button class="big-button" type="submit" formaction="{{ url_for('start_module', module='meal') }}">🍽 Protokoll Essen</button>
+    <button class="big-button" type="submit" formaction="{{ url_for('start_module', module='illness') }}">🤒 Krank</button>
+    <button class="big-button" type="submit" formaction="{{ url_for('start_module', module='consumption') }}">⚡ Verbrauch</button>
+  </form>
+  <form method="post" action="{{ url_for('undo') }}"><button class="secondary-button" type="submit">Rückgängig letzter Eintrag</button></form>
+</div>
+{% endblock %}

@@ -1,0 +1,34 @@
+{% extends "base.html" %}{% block content %}
+<div class="card"><h2>Import</h2>
+<form method="get" class="inline-form">
+<label><input type="radio" name="kind" value="electricity" {% if kind=='electricity' %}checked{% endif %}> Strom</label>
+<label><input type="radio" name="kind" value="water" {% if kind=='water' %}checked{% endif %}> Wasser</label>
+<label><input type="radio" name="kind" value="fuel" {% if kind=='fuel' %}checked{% endif %}> Auto</label>
+<button type="submit">Wechseln</button></form>
+
+<p><a href="{{ url_for('import_template', kind=kind) }}">Vorlage herunterladen</a></p>
+{% if kind == 'electricity' %}<pre>date,time,consumption_meter_kwh,feedin_meter_kwh,notes
+2024-01-15,18:30,12345,678,Ablesung</pre>{% endif %}
+{% if kind == 'water' %}<pre>date,time,water_meter_m3,notes
+2024-01-15,18:30,5432,Ablesung</pre>{% endif %}
+{% if kind == 'fuel' %}<pre>date,time,vehicle,odometer_km,total_price_eur,liters,price_per_liter,notes
+2024-01-10,17:20,Kangoo,63420,74.20,41.00,1.810,Tankstelle XY</pre>{% endif %}
+
+<form method="post" enctype="multipart/form-data">
+<input type="hidden" name="kind" value="{{ kind }}">
+<input type="hidden" name="mode" value="preview">
+<label>CSV-Datei</label><input type="file" name="csv_file" accept=".csv">
+<button class="secondary-button" type="submit">Vorschau erstellen</button>
+</form>
+
+{% if errors %}<div class="hint-box error-box"><strong>Fehler</strong><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
+{% if warnings %}<div class="hint-box warn-box"><strong>Warnungen</strong><ul>{% for w in warnings %}<li>{{ w }}</li>{% endfor %}</ul></div>{% endif %}
+
+{% if preview_rows %}
+<h3>Vorschau ({{ preview_rows|length }} Zeilen)</h3>
+<div class="table-wrap"><table><thead><tr>{% for k in preview_rows[0].keys() %}<th>{{ k }}</th>{% endfor %}</tr></thead><tbody>
+{% for row in preview_rows[:10] %}<tr>{% for v in row.values() %}<td>{{ v }}</td>{% endfor %}</tr>{% endfor %}
+</tbody></table></div>
+<form method="post"><input type="hidden" name="kind" value="{{ kind }}"><input type="hidden" name="mode" value="commit"><button class="big-button" type="submit">Import durchführen</button></form>
+{% endif %}
+</div>{% endblock %}

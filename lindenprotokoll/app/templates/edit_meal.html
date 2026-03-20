@@ -1,0 +1,9 @@
+{% extends "base.html" %}{% block content %}
+<div class="card"><h2>Essen bearbeiten</h2>
+<form method="post">
+<label>Person</label><select name="person_id">{% for p in people %}<option value="{{ p.person_id }}" {% if details.entry.person_id == p.person_id %}selected{% endif %}>{{ p.display_name }}</option>{% endfor %}</select>
+<div class="list">{% for item in food_items %}<label class="option"><input type="checkbox" name="food_ids" value="{{ item.food_id }}" {% if item.food_id in selected_food_ids %}checked{% endif %}><span>{{ item.food_name }}</span></label>{% endfor %}</div>
+<label>Datum</label><input type="date" name="date" value="{{ details.entry.date }}" required>
+<label>Uhrzeit</label><input type="time" name="time" value="{{ details.entry.time }}" required>
+<button class="big-button" type="submit">Aktualisieren</button>
+</form></div>{% endblock %}

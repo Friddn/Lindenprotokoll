@@ -1,0 +1,7 @@
+{% extends "base.html" %}{% block content %}
+<div class="card"><h2>Krank – Typ</h2>
+<a class="big-button link-button" href="{{ url_for('illness_abdominal') }}">Bauchschmerzen</a>
+<a class="big-button link-button" href="{{ url_for('illness_fever') }}">Fieber</a>
+<a class="big-button link-button" href="{{ url_for('illness_medication') }}">Medikamente</a>
+<a class="big-button link-button" href="{{ url_for('illness_other') }}">Anderes</a>
+</div>{% endblock %}

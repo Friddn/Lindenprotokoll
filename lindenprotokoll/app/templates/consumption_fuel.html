@@ -1,0 +1,12 @@
+{% extends "base.html" %}{% block content %}
+<div class="card"><h2>Auto</h2><p class="muted">Fahrzeug: Kangoo</p><form method="post">
+<label>Kilometerstand (km)</label><input type="number" name="odometer_km" min="0" max="999999" step="1">
+<label>Gesamtbetrag (€)</label><input type="number" name="total_price_eur" min="0" max="999.99" step="0.01">
+<label>Menge (Liter)</label><input type="number" name="liters" min="0" max="99.99" step="0.01">
+<label>Literpreis</label><input type="number" name="price_per_liter" min="0" max="9.999" step="0.001">
+<label>Freitext</label><textarea name="notes" rows="3"></textarea>
+<label>Datum</label><input type="date" name="date" value="{{ date_value }}" required>
+<label>Uhrzeit</label><input type="time" name="time" value="{{ time_value }}" required>
+<button class="big-button" type="submit" name="save_mode" value="back">Speichern</button>
+<button class="secondary-button" type="submit" name="save_mode" value="stay">Speichern + weiterer Eintrag</button>
+</form></div>{% endblock %}

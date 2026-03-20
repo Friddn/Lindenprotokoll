@@ -1,0 +1,24 @@
+{% extends "base.html" %}{% block content %}
+<div class="card"><h2>Eintrag #{{ details.entry.entry_id }}</h2>
+<p><strong>{{ details.entry.date }} {{ details.entry.time }}</strong></p>
+<p><strong>Typ:</strong> {{ details.entry.subtype }}</p>
+{% if details.entry.person_name %}<p><strong>Person:</strong> {{ details.entry.person_name }}</p>{% endif %}
+{% if details.entry.subtype == 'meal' %}<p><strong>Essen:</strong><br>{% for item in details.foods %}• {{ item }}<br>{% endfor %}</p>{% endif %}
+{% if details.entry.subtype == 'abdominal_pain' %}<p><strong>Bereiche:</strong> {{ details.regions|join(', ') }}</p><p><strong>Freitext:</strong> {{ details.notes or '—' }}</p>{% endif %}
+{% if details.entry.subtype == 'fever' %}<p><strong>Temperatur:</strong> {{ '%.1f'|format(details.temperature_c) }} °C</p><p><strong>Freitext:</strong> {{ details.notes or '—' }}</p>{% endif %}
+{% if details.entry.subtype == 'medication' %}<p><strong>Medikamente:</strong><br>{% for item in details.medication_names %}• {{ item }}<br>{% endfor %}</p><p><strong>Freitext:</strong> {{ details.notes or '—' }}</p>{% endif %}
+{% if details.entry.subtype == 'other' %}<p><strong>Freitext:</strong> {{ details.notes or '—' }}</p>{% endif %}
+{% if details.entry.subtype == 'electricity' %}<p><strong>Verbrauch Zählerstand:</strong> {{ details.consumption_meter_kwh or '—' }}</p><p><strong>Einspeise Zählerstand:</strong> {{ details.feedin_meter_kwh or '—' }}</p><p><strong>Freitext:</strong> {{ details.notes or '—' }}</p>{% endif %}
+{% if details.entry.subtype == 'water' %}<p><strong>Wasser Zählerstand:</strong> {{ details.water_meter_m3 }}</p><p><strong>Freitext:</strong> {{ details.notes or '—' }}</p>{% endif %}
+{% if details.entry.subtype == 'fuel' %}<p><strong>Fahrzeug:</strong> {{ details.vehicle }}</p><p><strong>Kilometerstand:</strong> {{ details.odometer_km or '—' }}</p><p><strong>Gesamtbetrag:</strong> {{ details.total_price_eur or '—' }}</p><p><strong>Liter:</strong> {{ details.liters or '—' }}</p><p><strong>Literpreis:</strong> {{ details.price_per_liter or '—' }}</p><p><strong>Freitext:</strong> {{ details.notes or '—' }}</p>{% endif %}
+<div class="button-group">
+{% if details.entry.subtype == 'meal' %}<a class="big-button link-button" href="{{ url_for('edit_meal', entry_id=details.entry.entry_id) }}">Bearbeiten</a>{% endif %}
+{% if details.entry.subtype == 'abdominal_pain' %}<a class="big-button link-button" href="{{ url_for('edit_abdominal', entry_id=details.entry.entry_id) }}">Bearbeiten</a>{% endif %}
+{% if details.entry.subtype == 'fever' %}<a class="big-button link-button" href="{{ url_for('edit_fever', entry_id=details.entry.entry_id) }}">Bearbeiten</a>{% endif %}
+{% if details.entry.subtype == 'medication' %}<a class="big-button link-button" href="{{ url_for('edit_medication', entry_id=details.entry.entry_id) }}">Bearbeiten</a>{% endif %}
+{% if details.entry.subtype == 'other' %}<a class="big-button link-button" href="{{ url_for('edit_other', entry_id=details.entry.entry_id) }}">Bearbeiten</a>{% endif %}
+{% if details.entry.subtype == 'electricity' %}<a class="big-button link-button" href="{{ url_for('edit_electricity', entry_id=details.entry.entry_id) }}">Bearbeiten</a>{% endif %}
+{% if details.entry.subtype == 'water' %}<a class="big-button link-button" href="{{ url_for('edit_water', entry_id=details.entry.entry_id) }}">Bearbeiten</a>{% endif %}
+{% if details.entry.subtype == 'fuel' %}<a class="big-button link-button" href="{{ url_for('edit_fuel', entry_id=details.entry.entry_id) }}">Bearbeiten</a>{% endif %}
+<form method="post" action="{{ url_for('entry_delete', entry_id=details.entry.entry_id) }}"><button class="secondary-button" type="submit">Löschen</button></form>
+</div></div>{% endblock %}

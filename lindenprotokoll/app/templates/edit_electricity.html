@@ -1,0 +1,9 @@
+{% extends "base.html" %}{% block content %}
+<div class="card"><h2>Strom bearbeiten</h2><form method="post">
+<label>Verbrauch Zählerstand (kWh)</label><input type="number" name="consumption_meter_kwh" value="{{ details.consumption_meter_kwh or '' }}">
+<label>Einspeise Zählerstand (kWh)</label><input type="number" name="feedin_meter_kwh" value="{{ details.feedin_meter_kwh or '' }}">
+<label>Freitext</label><textarea name="notes" rows="3">{{ details.notes or "" }}</textarea>
+<label>Datum</label><input type="date" name="date" value="{{ details.entry.date }}" required>
+<label>Uhrzeit</label><input type="time" name="time" value="{{ details.entry.time }}" required>
+<button class="big-button" type="submit">Aktualisieren</button>
+</form></div>{% endblock %}

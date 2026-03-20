@@ -1,0 +1,6 @@
+{% extends "base.html" %}{% block content %}
+<div class="card"><h2>Bauchschmerzen</h2>
+<form method="post"><label>Bild URL</label><input type="text" name="abdominal_image_url" value="{{ abdominal_image_url }}" placeholder="/local/bauch.png"><button class="secondary-button" type="submit">Speichern</button></form>
+<div class="hint-box"><strong>Home Assistant</strong><p>Bild nach <code>/config/www/bauch.png</code> hochladen und hier <code>/local/bauch.png</code> eintragen.</p></div>
+{% if abdominal_image_url %}<h3>Vorschau</h3><img src="{{ abdominal_image_url }}" class="abdominal-image" alt="Vorschau">{% endif %}
+</div>{% endblock %}

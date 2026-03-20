@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% block content %}
+<div class="card"><h2>Listen</h2>
+<h3>Essen</h3>
+<form method="post" class="inline-form"><input type="hidden" name="entity" value="food"><input type="hidden" name="action" value="set_sort_mode">
+<label><input type="radio" name="sort_mode" value="usage" {% if food_sort_mode != 'alpha' %}checked{% endif %}> Häufigste zuerst</label>
+<label><input type="radio" name="sort_mode" value="alpha" {% if food_sort_mode == 'alpha' %}checked{% endif %}> Alphabetisch</label>
+<button type="submit">Speichern</button></form>
+<form method="post"><input type="hidden" name="entity" value="food"><input type="hidden" name="action" value="add"><label>Neues Essen</label><input type="text" name="name"><button class="secondary-button" type="submit">Hinzufügen / Reaktivieren</button></form>
+<div class="list">{% for item in active_food %}<div class="manage-row"><form method="post" class="manage-form"><input type="hidden" name="entity" value="food"><input type="hidden" name="action" value="rename"><input type="hidden" name="item_id" value="{{ item.food_id }}"><input type="text" name="name" value="{{ item.food_name }}"><button type="submit">Umbenennen</button></form>
+<form method="post"><input type="hidden" name="entity" value="food"><input type="hidden" name="action" value="deactivate"><input type="hidden" name="item_id" value="{{ item.food_id }}"><button type="submit">Deaktivieren</button></form></div>{% endfor %}</div>
+<details class="section"><summary>Inaktive Essen</summary><div class="list">{% for item in inactive_food %}<div class="manage-row"><span>{{ item.food_name }}</span><form method="post"><input type="hidden" name="entity" value="food"><input type="hidden" name="action" value="reactivate"><input type="hidden" name="item_id" value="{{ item.food_id }}"><button type="submit">Reaktivieren</button></form></div>{% else %}<p class="muted">Keine inaktiven Essen.</p>{% endfor %}</div></details>
+<hr><h3>Medikamente</h3>
+<form method="post"><input type="hidden" name="entity" value="medication"><input type="hidden" name="action" value="add"><label>Neues Medikament</label><input type="text" name="name"><button class="secondary-button" type="submit">Hinzufügen / Reaktivieren</button></form>
+<div class="list">{% for item in active_medications %}<div class="manage-row"><form method="post" class="manage-form"><input type="hidden" name="entity" value="medication"><input type="hidden" name="action" value="rename"><input type="hidden" name="item_id" value="{{ item.medication_id }}"><input type="text" name="name" value="{{ item.medication_name }}"><button type="submit">Umbenennen</button></form>
+<form method="post"><input type="hidden" name="entity" value="medication"><input type="hidden" name="action" value="deactivate"><input type="hidden" name="item_id" value="{{ item.medication_id }}"><button type="submit">Deaktivieren</button></form></div>{% endfor %}</div>
+<details class="section"><summary>Inaktive Medikamente</summary><div class="list">{% for item in inactive_medications %}<div class="manage-row"><span>{{ item.medication_name }}</span><form method="post"><input type="hidden" name="entity" value="medication"><input type="hidden" name="action" value="reactivate"><input type="hidden" name="item_id" value="{{ item.medication_id }}"><button type="submit">Reaktivieren</button></form></div>{% else %}<p class="muted">Keine inaktiven Medikamente.</p>{% endfor %}</div></details>
+</div>{% endblock %}

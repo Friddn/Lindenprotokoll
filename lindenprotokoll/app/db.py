@@ -1,6 +1,6 @@
 from __future__ import annotations
 import csv, io, sqlite3
-from config import DB_PATH, DEFAULT_FOOD_ITEMS, DEFAULT_MEDICATIONS, DEFAULT_PERSONS, DEFAULT_SETTINGS
+from config import DB_PATH, DEFAULT_FOOD_ITEMS, DEFAULT_MEDICATIONS, DEFAULT_PERSONS, DEFAULT_SETTINGS, DEFAULT_SYMPTOMS
 
 def connect() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -110,15 +110,34 @@ def init_db() -> None:
             FOREIGN KEY(entry_id) REFERENCES entries(entry_id) ON DELETE CASCADE
         );
         """)
-        cols = {r["name"] for r in conn.execute("PRAGMA table_info(consumption_electricity)")}
-        if "notes" not in cols:
-            conn.execute("ALTER TABLE consumption_electricity ADD COLUMN notes TEXT")
-        cols = {r["name"] for r in conn.execute("PRAGMA table_info(consumption_water)")}
-        if "notes" not in cols:
-            conn.execute("ALTER TABLE consumption_water ADD COLUMN notes TEXT")
-        cols = {r["name"] for r in conn.execute("PRAGMA table_info(consumption_fuel)")}
-        if "notes" not in cols:
-            conn.execute("ALTER TABLE consumption_fuel ADD COLUMN notes TEXT")
+        # Migration: add missing columns to existing tables
+        for tbl in ("consumption_electricity", "consumption_water", "consumption_fuel",
+                    "illness_fever", "illness_other"):
+            cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({tbl})")}
+            if "notes" not in cols:
+                conn.execute(f"ALTER TABLE {tbl} ADD COLUMN notes TEXT")
+
+        # Symptoms master list
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS symptoms_master (
+            symptom_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symptom_name TEXT NOT NULL UNIQUE,
+            usage_count INTEGER NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1
+        );
+        CREATE TABLE IF NOT EXISTS illness_symptom_links (
+            entry_id INTEGER NOT NULL,
+            symptom_id INTEGER NOT NULL,
+            PRIMARY KEY(entry_id, symptom_id),
+            FOREIGN KEY(entry_id) REFERENCES entries(entry_id) ON DELETE CASCADE,
+            FOREIGN KEY(symptom_id) REFERENCES symptoms_master(symptom_id)
+        );
+        CREATE TABLE IF NOT EXISTS illness_symptom_notes (
+            entry_id INTEGER PRIMARY KEY,
+            notes TEXT,
+            FOREIGN KEY(entry_id) REFERENCES entries(entry_id) ON DELETE CASCADE
+        );
+        """)
 
         existing_people = {r["display_name"].lower(): r for r in conn.execute("SELECT * FROM people")}
         for name in DEFAULT_PERSONS:
@@ -132,6 +151,10 @@ def init_db() -> None:
         for name in DEFAULT_MEDICATIONS:
             if name.lower() not in existing_med:
                 conn.execute("INSERT INTO medications_master(medication_name, is_active) VALUES (?,1)", (name,))
+        existing_symptoms = {r["symptom_name"].lower(): r for r in conn.execute("SELECT * FROM symptoms_master")}
+        for name in DEFAULT_SYMPTOMS:
+            if name.lower() not in existing_symptoms:
+                conn.execute("INSERT INTO symptoms_master(symptom_name, usage_count, is_active) VALUES (?,0,1)", (name,))
         existing_settings = {r["setting_key"] for r in conn.execute("SELECT setting_key FROM app_settings")}
         for k, v in DEFAULT_SETTINGS.items():
             if k not in existing_settings:
@@ -303,7 +326,40 @@ def update_medications(entry_id, person_id, date, time, medication_ids, notes):
             conn.execute("INSERT INTO illness_medication_links(entry_id, medication_id) VALUES (?,?)", (entry_id, med_id))
         conn.execute("UPDATE illness_medication_notes SET notes=? WHERE entry_id=?", (notes or None, entry_id))
 
-def save_other_illness(person_id, date, time, notes, device_type, ua):
+def add_symptom(name): return _reactivate_or_insert("symptoms_master", "symptom_id", "symptom_name", name)
+def rename_symptom(i, n): return _rename("symptoms_master", "symptom_id", "symptom_name", i, n)
+def set_symptom_active(i, a): _set_active("symptoms_master", "symptom_id", i, a)
+
+def get_symptoms(active_only=True):
+    sort_mode = get_setting("symptom_sort_mode", "usage")
+    sql = "SELECT * FROM symptoms_master"
+    if active_only:
+        sql += " WHERE is_active=1"
+    if sort_mode == "alpha":
+        sql += " ORDER BY symptom_name COLLATE NOCASE"
+    else:
+        sql += " ORDER BY usage_count DESC, symptom_name COLLATE NOCASE"
+    with connect() as conn:
+        return conn.execute(sql).fetchall()
+
+def save_symptoms(person_id, date, time, symptom_ids, notes, device_type, ua):
+    entry_id = create_entry("illness", "symptoms", person_id, date, time, device_type, ua)
+    with connect() as conn:
+        for sid in sorted(set(symptom_ids)):
+            conn.execute("INSERT INTO illness_symptom_links(entry_id, symptom_id) VALUES (?,?)", (entry_id, sid))
+            conn.execute("UPDATE symptoms_master SET usage_count = usage_count + 1 WHERE symptom_id=?", (sid,))
+        conn.execute("INSERT INTO illness_symptom_notes(entry_id, notes) VALUES (?,?)", (entry_id, notes or None))
+    return entry_id
+
+def update_symptoms(entry_id, person_id, date, time, symptom_ids, notes):
+    with connect() as conn:
+        conn.execute("UPDATE entries SET person_id=?, date=?, time=?, updated_at=CURRENT_TIMESTAMP WHERE entry_id=?",
+                     (person_id, date, time, entry_id))
+        conn.execute("DELETE FROM illness_symptom_links WHERE entry_id=?", (entry_id,))
+        for sid in sorted(set(symptom_ids)):
+            conn.execute("INSERT INTO illness_symptom_links(entry_id, symptom_id) VALUES (?,?)", (entry_id, sid))
+            conn.execute("UPDATE symptoms_master SET usage_count = usage_count + 1 WHERE symptom_id=?", (sid,))
+        conn.execute("UPDATE illness_symptom_notes SET notes=? WHERE entry_id=?", (notes or None, entry_id))
     entry_id = create_entry("illness", "other", person_id, date, time, device_type, ua)
     with connect() as conn:
         conn.execute("INSERT INTO illness_other(entry_id, notes) VALUES (?,?)", (entry_id, notes or None))
@@ -360,6 +416,7 @@ def entry_summary_row(entry):
         "abdominal_pain": "Bauchschmerzen",
         "fever": "Fieber",
         "medication": "Medikamente",
+        "symptoms": "Symptome",
         "other": "Anderes",
         "electricity": "Strom",
         "water": "Wasser",
@@ -446,6 +503,12 @@ def get_entry_details(entry_id):
             details["medication_names"] = [r["medication_name"] for r in conn.execute("""SELECT m.medication_name FROM illness_medication_links l
                 JOIN medications_master m ON l.medication_id=m.medication_id WHERE l.entry_id=? ORDER BY m.medication_name COLLATE NOCASE""", (entry_id,))]
             row = conn.execute("SELECT notes FROM illness_medication_notes WHERE entry_id=?", (entry_id,)).fetchone()
+            details["notes"] = row["notes"] if row else ""
+        elif subtype == "symptoms":
+            details["symptoms"] = [r["symptom_id"] for r in conn.execute("SELECT symptom_id FROM illness_symptom_links WHERE entry_id=?", (entry_id,))]
+            details["symptom_names"] = [r["symptom_name"] for r in conn.execute("""SELECT s.symptom_name FROM illness_symptom_links l
+                JOIN symptoms_master s ON l.symptom_id=s.symptom_id WHERE l.entry_id=? ORDER BY s.symptom_name COLLATE NOCASE""", (entry_id,))]
+            row = conn.execute("SELECT notes FROM illness_symptom_notes WHERE entry_id=?", (entry_id,)).fetchone()
             details["notes"] = row["notes"] if row else ""
         elif subtype == "other":
             row = conn.execute("SELECT notes FROM illness_other WHERE entry_id=?", (entry_id,)).fetchone()

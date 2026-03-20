@@ -1,0 +1,16 @@
+{% extends "base.html" %}{% block content %}
+<div class="card"><h2>Protokoll Symptome</h2><p class="muted">Sortierung: {{ "Alphabetisch" if symptom_sort_mode == "alpha" else "Häufigste zuerst" }}</p>
+<form method="post" action="{{ url_for('illness_symptoms_save') }}">
+<label>Suche</label><input id="symptom-search" type="text" placeholder="Symptom suchen...">
+<div class="list">{% for item in symptoms %}<label class="option food-option" data-name="{{ item.symptom_name|lower }}"><input type="checkbox" name="symptom_ids" value="{{ item.symptom_id }}"><span>{{ item.symptom_name }}</span></label>{% endfor %}</div>
+<label>Freitext (optional)</label><input type="text" name="notes" placeholder="Notiz...">
+<label>Datum</label><input type="date" name="date" value="{{ date_value }}" required>
+<label>Uhrzeit</label><input type="time" name="time" value="{{ time_value }}" required>
+<button class="big-button" type="submit">Speichern</button></form><hr>
+<form method="post"><label>Neues Symptom hinzufügen</label><input type="text" name="new_symptom_name" placeholder="Neues Symptom"><button class="secondary-button" type="submit">Hinzufügen</button></form>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", ()=>{ const s=document.getElementById("symptom-search"); if(!s) return;
+s.addEventListener("input", ()=>{ const q=s.value.trim().toLowerCase(); document.querySelectorAll(".food-option").forEach(r=>r.style.display=(r.dataset.name||"").includes(q)?"flex":"none");});});
+</script>
+{% endblock %}

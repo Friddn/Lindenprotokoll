@@ -216,6 +216,52 @@ def edit_medication(entry_id):
         return redirect(url_for("history"))
     return render_template("edit_medication.html", details=details, people=get_people(), medications=get_medications(), **base_context())
 
+@app.route("/illness/symptoms", methods=["GET", "POST"])
+def illness_symptoms():
+    if "person_id" not in session:
+        return redirect(url_for("illness_person"))
+    if request.method == "POST" and "new_symptom_name" in request.form:
+        ok, msg = add_symptom(request.form.get("new_symptom_name", ""))
+        flash(msg, "success" if ok else "error")
+        return redirect(url_for("illness_symptoms"))
+    return render_template("illness_symptoms.html", symptoms=get_symptoms(),
+                           symptom_sort_mode=get_setting("symptom_sort_mode", "usage"),
+                           date_value=session.get("date") or now_date_time()[0],
+                           time_value=session.get("time") or now_date_time()[1],
+                           **base_context())
+
+@app.post("/illness/symptoms/save")
+def illness_symptoms_save():
+    symptom_ids = [int(v) for v in request.form.getlist("symptom_ids")]
+    if not symptom_ids:
+        flash("Bitte mindestens ein Symptom auswählen.", "error")
+        return redirect(url_for("illness_symptoms"))
+    dev, ua = current_device_meta()
+    entry_id = save_symptoms(int(session["person_id"]), request.form.get("date", ""),
+                             request.form.get("time", ""), symptom_ids,
+                             request.form.get("notes", ""), dev, ua)
+    session["undo_entry_id"] = entry_id
+    flash("Gespeichert.", "success")
+    return redirect(url_for("index"))
+
+@app.route("/edit/symptoms/<int:entry_id>", methods=["GET", "POST"])
+def edit_symptoms(entry_id):
+    details = get_entry_details(entry_id)
+    if not details or details["entry"]["subtype"] != "symptoms":
+        return redirect(url_for("history"))
+    if request.method == "POST":
+        symptom_ids = [int(v) for v in request.form.getlist("symptom_ids")]
+        if not symptom_ids:
+            flash("Bitte mindestens ein Symptom auswählen.", "error")
+            return redirect(url_for("edit_symptoms", entry_id=entry_id))
+        update_symptoms(entry_id, int(request.form["person_id"]), request.form.get("date", ""),
+                        request.form.get("time", ""), symptom_ids, request.form.get("notes", ""))
+        flash("Eintrag aktualisiert.", "success")
+        return redirect(url_for("history"))
+    return render_template("edit_symptoms.html", details=details, people=get_people(),
+                           symptoms=get_symptoms(), selected_symptom_ids=set(details["symptoms"]),
+                           **base_context())
+
 @app.route("/illness/other", methods=["GET", "POST"])
 def illness_other():
     if "person_id" not in session:
@@ -441,11 +487,24 @@ def admin_lists():
                 set_medication_active(int(request.form["item_id"]), False); flash("Medikament deaktiviert.", "success")
             elif action == "reactivate":
                 set_medication_active(int(request.form["item_id"]), True); flash("Medikament reaktiviert.", "success")
+        if entity == "symptom":
+            if action == "add":
+                ok, msg = add_symptom(request.form.get("name","")); flash(msg, "success" if ok else "error")
+            elif action == "rename":
+                ok, msg = rename_symptom(int(request.form["item_id"]), request.form.get("name","")); flash(msg, "success" if ok else "error")
+            elif action == "deactivate":
+                set_symptom_active(int(request.form["item_id"]), False); flash("Symptom deaktiviert.", "success")
+            elif action == "reactivate":
+                set_symptom_active(int(request.form["item_id"]), True); flash("Symptom reaktiviert.", "success")
+            elif action == "set_sort_mode":
+                set_setting("symptom_sort_mode", "alpha" if request.form.get("sort_mode") == "alpha" else "usage"); flash("Sortierung gespeichert.", "success")
         return redirect(url_for("admin_lists"))
     return render_template("admin_lists.html",
                            food_sort_mode=get_setting("food_sort_mode", "usage"),
                            active_food=get_food_items(True), inactive_food=[r for r in get_food_items(False) if r["is_active"] == 0],
                            active_medications=get_medications(True), inactive_medications=[r for r in get_medications(False) if r["is_active"] == 0],
+                           symptom_sort_mode=get_setting("symptom_sort_mode", "usage"),
+                           active_symptoms=get_symptoms(True), inactive_symptoms=[r for r in get_symptoms(False) if r["is_active"] == 0],
                            **base_context())
 
 @app.route("/verwaltung/bauchschmerzen", methods=["GET", "POST"])

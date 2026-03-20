@@ -8,7 +8,9 @@ SECRET_KEY = "lindenprotokoll-secret"
 DEFAULT_PERSONS = ["Person-A", "Person-B", "Person-C", "Person-D", "Person-E"]
 DEFAULT_FOOD_ITEMS = ["kein Essen", "Brot", "Milch", "Nudeln", "Reis"]
 DEFAULT_MEDICATIONS = ["Ibuprofen", "Paracetamol"]
+DEFAULT_SYMPTOMS = ["Kopfschmerzen", "Übelkeit", "Schwindel", "Husten", "Schnupfen", "Halsschmerzen", "Müdigkeit", "Gliederschmerzen"]
 DEFAULT_SETTINGS = {
     "food_sort_mode": "usage",
+    "symptom_sort_mode": "usage",
     "abdominal_image_url": "",
 }

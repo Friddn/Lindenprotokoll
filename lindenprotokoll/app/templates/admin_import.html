@@ -1,34 +1,75 @@
 {% extends "base.html" %}{% block content %}
 <div class="card"><h2>Import</h2>
-<form method="get" class="inline-form">
-<label><input type="radio" name="kind" value="electricity" {% if kind=='electricity' %}checked{% endif %}> Strom</label>
-<label><input type="radio" name="kind" value="water" {% if kind=='water' %}checked{% endif %}> Wasser</label>
-<label><input type="radio" name="kind" value="fuel" {% if kind=='fuel' %}checked{% endif %}> Auto</label>
-<button type="submit">Wechseln</button></form>
+<div class="button-group" style="flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem;">
+{% for k,l in [('meal','Essen'),('illness','Krank'),('electricity','Strom'),('water','Wasser'),('fuel','Auto')] %}
+<a class="big-button link-button {% if kind==k %}active{% endif %}" style="flex:0 0 auto;" href="{{ url_for('admin_import', kind=k) }}">{{ l }}</a>
+{% endfor %}
+</div>
 
-<p><a href="{{ url_for('import_template', kind=kind) }}">Vorlage herunterladen</a></p>
-{% if kind == 'electricity' %}<pre>date,time,consumption_meter_kwh,feedin_meter_kwh,notes
-2024-01-15,18:30,12345,678,Ablesung</pre>{% endif %}
-{% if kind == 'water' %}<pre>date,time,water_meter_m3,notes
-2024-01-15,18:30,5432,Ablesung</pre>{% endif %}
-{% if kind == 'fuel' %}<pre>date,time,vehicle,odometer_km,total_price_eur,liters,price_per_liter,notes
-2024-01-10,17:20,Kangoo,63420,74.20,41.00,1.810,Tankstelle XY</pre>{% endif %}
+<h3>Import: {{ {'meal':'Essen','illness':'Krank','electricity':'Strom','water':'Wasser','fuel':'Auto'}.get(kind, kind) }}</h3>
+
+{% if kind == 'meal' %}
+<p class="muted">Spalten: <code>person, date (YYYY-MM-DD), time (HH:MM), foods (mit " | " getrennt)</code><br>
+Personen und Essen werden automatisch angelegt wenn sie noch nicht existieren.</p>
+{% elif kind == 'illness' %}
+<p class="muted">Spalten: <code>subtype, person, date (YYYY-MM-DD), time (HH:MM), temperature_c, medications (mit " | " getrennt), notes</code><br>
+Subtypen: <code>abdominal_pain, fever, medication, other, symptoms</code><br>
+Personen und Medikamente werden automatisch angelegt.</p>
+{% else %}
+<p class="muted">Vorlage herunterladen und ausfüllen.</p>
+{% endif %}
+
+<p><a class="secondary-button link-button" href="{{ url_for('import_template', kind=kind) }}">Vorlage herunterladen</a></p>
 
 <form method="post" enctype="multipart/form-data">
 <input type="hidden" name="kind" value="{{ kind }}">
 <input type="hidden" name="mode" value="preview">
-<label>CSV-Datei</label><input type="file" name="csv_file" accept=".csv">
-<button class="secondary-button" type="submit">Vorschau erstellen</button>
+<label>CSV-Datei auswählen</label>
+<input type="file" name="csv_file" accept=".csv">
+<button class="big-button" type="submit">Vorschau anzeigen</button>
 </form>
 
-{% if errors %}<div class="hint-box error-box"><strong>Fehler</strong><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
-{% if warnings %}<div class="hint-box warn-box"><strong>Warnungen</strong><ul>{% for w in warnings %}<li>{{ w }}</li>{% endfor %}</ul></div>{% endif %}
+{% if preview_rows is not none %}
+<hr>
+{% if errors %}
+<div class="messages">{% for e in errors %}<div class="message error">{{ e }}</div>{% endfor %}</div>
+{% endif %}
+{% if warnings %}
+<div class="messages">{% for w in warnings %}<div class="message warning">{{ w }}</div>{% endfor %}</div>
+{% endif %}
 
 {% if preview_rows %}
 <h3>Vorschau ({{ preview_rows|length }} Zeilen)</h3>
-<div class="table-wrap"><table><thead><tr>{% for k in preview_rows[0].keys() %}<th>{{ k }}</th>{% endfor %}</tr></thead><tbody>
-{% for row in preview_rows[:10] %}<tr>{% for v in row.values() %}<td>{{ v }}</td>{% endfor %}</tr>{% endfor %}
-</tbody></table></div>
-<form method="post"><input type="hidden" name="kind" value="{{ kind }}"><input type="hidden" name="mode" value="commit"><button class="big-button" type="submit">Import durchführen</button></form>
+<div class="list">
+{% for row in preview_rows[:20] %}
+<div class="history-row">
+  {% if kind == 'meal' %}
+    <strong>{{ row.date }} {{ row.time }}</strong> – {{ row.person }}<br>
+    <span class="muted">{{ row.food_names | join(', ') or '(kein Essen)' }}</span>
+  {% elif kind == 'illness' %}
+    <strong>{{ row.date }} {{ row.time }}</strong> – {{ row.person }} / {{ row.subtype }}<br>
+    <span class="muted">
+      {% if row.subtype == 'fever' %}{{ row.temperature_c }} °C{% endif %}
+      {% if row.subtype == 'medication' %}{{ row.get('medication_names', []) | join(', ') }}{% endif %}
+      {% if row.subtype == 'symptoms' %}{{ row.get('symptom_names', []) | join(', ') }}{% endif %}
+      {% if row.notes %}{{ row.notes }}{% endif %}
+    </span>
+  {% else %}
+    <strong>{{ row.date }} {{ row.time }}</strong>
+    {% for k,v in row.items() %}{% if k not in ('date','time') and v %} | {{ k }}: {{ v }}{% endif %}{% endfor %}
+  {% endif %}
+</div>
+{% endfor %}
+{% if preview_rows|length > 20 %}<p class="muted">... und {{ preview_rows|length - 20 }} weitere Zeilen.</p>{% endif %}
+</div>
+
+{% if not errors %}
+<form method="post">
+<input type="hidden" name="kind" value="{{ kind }}">
+<input type="hidden" name="mode" value="commit">
+<button class="big-button" type="submit">{{ preview_rows|length }} Einträge jetzt importieren</button>
+</form>
+{% endif %}
+{% endif %}
 {% endif %}
 </div>{% endblock %}

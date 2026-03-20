@@ -360,6 +360,8 @@ def update_symptoms(entry_id, person_id, date, time, symptom_ids, notes):
             conn.execute("INSERT INTO illness_symptom_links(entry_id, symptom_id) VALUES (?,?)", (entry_id, sid))
             conn.execute("UPDATE symptoms_master SET usage_count = usage_count + 1 WHERE symptom_id=?", (sid,))
         conn.execute("UPDATE illness_symptom_notes SET notes=? WHERE entry_id=?", (notes or None, entry_id))
+
+def save_other_illness(person_id, date, time, notes, device_type, ua):
     entry_id = create_entry("illness", "other", person_id, date, time, device_type, ua)
     with connect() as conn:
         conn.execute("INSERT INTO illness_other(entry_id, notes) VALUES (?,?)", (entry_id, notes or None))
@@ -611,12 +613,55 @@ def template_csv(kind):
         return "date,time,water_meter_m3,notes\n2024-01-15,18:30,5432,Ablesung\n"
     if kind == "fuel":
         return "date,time,vehicle,odometer_km,total_price_eur,liters,price_per_liter,notes\n2024-01-10,17:20,Kangoo,63420,74.20,41.00,1.810,Tankstelle XY\n"
+    if kind == "meal":
+        return "person,date,time,foods\nClara,2024-01-15,08:00,Brot | Butter | Apfel\n"
+    if kind == "illness":
+        return "subtype,person,date,time,temperature_c,medications,notes\nabdominal_pain,Clara,2024-01-15,18:00,,,Bauchschmerzen nach dem Essen\nfever,Clara,2024-01-16,08:00,38.5,,\nmedication,Clara,2024-01-16,09:00,,Ibuprofen | Paracetamol,\nother,Clara,2024-01-16,18:00,,,Allgemeines Unwohlsein\n"
     return ""
+
+def _get_or_create_person(conn, name):
+    cleaned = " ".join(name.split()).strip()
+    if not cleaned:
+        return None
+    row = conn.execute("SELECT person_id FROM people WHERE lower(display_name)=lower(?)", (cleaned,)).fetchone()
+    if row:
+        return row["person_id"]
+    cur = conn.execute("INSERT INTO people(display_name, is_active) VALUES (?,1)", (cleaned,))
+    return cur.lastrowid
+
+def _get_or_create_food(conn, name):
+    cleaned = " ".join(name.split()).strip()
+    if not cleaned:
+        return None
+    row = conn.execute("SELECT food_id FROM food_items_master WHERE lower(food_name)=lower(?)", (cleaned,)).fetchone()
+    if row:
+        return row["food_id"]
+    cur = conn.execute("INSERT INTO food_items_master(food_name, usage_count, is_active) VALUES (?,0,1)", (cleaned,))
+    return cur.lastrowid
+
+def _get_or_create_medication(conn, name):
+    cleaned = " ".join(name.split()).strip()
+    if not cleaned:
+        return None
+    row = conn.execute("SELECT medication_id FROM medications_master WHERE lower(medication_name)=lower(?)", (cleaned,)).fetchone()
+    if row:
+        return row["medication_id"]
+    cur = conn.execute("INSERT INTO medications_master(medication_name, is_active) VALUES (?,1)", (cleaned,))
+    return cur.lastrowid
 
 def parse_import_csv(kind, file_storage):
     text = file_storage.read().decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(text))
     rows, warnings, errors = [], [], []
+
+    def parse_int(v):
+        v = (v or "").strip()
+        return int(v) if v else None
+
+    def parse_float(v):
+        v = (v or "").strip().replace(",", ".")
+        return float(v) if v else None
+
     for idx, row in enumerate(reader, start=2):
         if not any((v or "").strip() for v in row.values()):
             continue
@@ -626,23 +671,84 @@ def parse_import_csv(kind, file_storage):
             if not date:
                 raise ValueError("Datum fehlt")
             item = {"date": date, "time": time}
-            def parse_int(v):
-                v=(v or "").strip()
-                return int(v) if v else None
-            def parse_float(v):
-                v=(v or "").strip().replace(",", ".")
-                return float(v) if v else None
-            if kind == "electricity":
+
+            if kind == "meal":
+                person = (row.get("person") or "").strip()
+                if not person:
+                    raise ValueError("Person fehlt")
+                foods_raw = (row.get("foods") or "").strip()
+                food_names = [f.strip() for f in foods_raw.split("|") if f.strip()] if foods_raw else []
+                item["person"] = person
+                item["food_names"] = food_names
+                # duplicate check
+                with connect() as conn:
+                    pid = conn.execute("SELECT person_id FROM people WHERE lower(display_name)=lower(?)", (person,)).fetchone()
+                    if pid:
+                        dup = conn.execute("""SELECT e.entry_id FROM entries e
+                            WHERE e.subtype='meal' AND e.person_id=? AND e.date=? AND e.time=?""",
+                            (pid["person_id"], date, time)).fetchone()
+                        if dup:
+                            warnings.append(f"Zeile {idx}: mögliches Duplikat ({person} {date} {time})")
+
+            elif kind == "illness":
+                subtype = (row.get("subtype") or "").strip()
+                person = (row.get("person") or "").strip()
+                if not subtype:
+                    raise ValueError("Subtyp fehlt")
+                if subtype not in ("abdominal_pain", "fever", "medication", "other", "symptoms"):
+                    raise ValueError(f"Unbekannter Subtyp: {subtype} (übersprungen)")
+                if not person:
+                    raise ValueError("Person fehlt")
+                item["subtype"] = subtype
+                item["person"] = person
+                item["notes"] = (row.get("notes") or "").strip()
+                if subtype == "fever":
+                    temp = parse_float(row.get("temperature_c"))
+                    if temp is None:
+                        raise ValueError("Temperatur fehlt")
+                    if temp < 34 or temp > 44:
+                        raise ValueError(f"Temperatur {temp} außerhalb 34–44")
+                    item["temperature_c"] = round(temp, 1)
+                elif subtype == "medication":
+                    meds_raw = (row.get("medications") or "").strip()
+                    med_names = [m.strip() for m in meds_raw.split("|") if m.strip()] if meds_raw else []
+                    if not med_names:
+                        raise ValueError("Medikamente fehlen")
+                    item["medication_names"] = med_names
+                elif subtype == "symptoms":
+                    syms_raw = (row.get("symptoms") or "").strip()
+                    sym_names = [s.strip() for s in syms_raw.split("|") if s.strip()] if syms_raw else []
+                    if not sym_names:
+                        raise ValueError("Symptome fehlen")
+                    item["symptom_names"] = sym_names
+
+            elif kind == "electricity":
                 item["consumption_meter_kwh"] = parse_int(row.get("consumption_meter_kwh"))
                 item["feedin_meter_kwh"] = parse_int(row.get("feedin_meter_kwh"))
                 item["notes"] = (row.get("notes") or "").strip()
                 if item["consumption_meter_kwh"] is None and item["feedin_meter_kwh"] is None:
                     raise ValueError("mindestens ein Zählerstand fehlt")
+                with connect() as conn:
+                    dup = conn.execute("""SELECT e.entry_id FROM entries e JOIN consumption_electricity c ON e.entry_id=c.entry_id
+                        WHERE e.subtype='electricity' AND e.date=? AND e.time=?
+                        AND ifnull(c.consumption_meter_kwh,-1)=ifnull(?, -1)
+                        AND ifnull(c.feedin_meter_kwh,-1)=ifnull(?, -1)""",
+                        (date, time, item["consumption_meter_kwh"], item["feedin_meter_kwh"])).fetchone()
+                    if dup:
+                        warnings.append(f"Zeile {idx}: mögliches Duplikat")
+
             elif kind == "water":
                 item["water_meter_m3"] = parse_int(row.get("water_meter_m3"))
                 item["notes"] = (row.get("notes") or "").strip()
                 if item["water_meter_m3"] is None:
                     raise ValueError("Wasser Zählerstand fehlt")
+                with connect() as conn:
+                    dup = conn.execute("""SELECT e.entry_id FROM entries e JOIN consumption_water w ON e.entry_id=w.entry_id
+                        WHERE e.subtype='water' AND e.date=? AND e.time=? AND w.water_meter_m3=?""",
+                        (date, time, item["water_meter_m3"])).fetchone()
+                    if dup:
+                        warnings.append(f"Zeile {idx}: mögliches Duplikat")
+
             elif kind == "fuel":
                 item["vehicle"] = (row.get("vehicle") or "Kangoo").strip() or "Kangoo"
                 item["odometer_km"] = parse_int(row.get("odometer_km"))
@@ -652,23 +758,14 @@ def parse_import_csv(kind, file_storage):
                 item["notes"] = (row.get("notes") or "").strip()
                 if all(v is None for v in [item["odometer_km"], item["total_price_eur"], item["liters"], item["price_per_liter"]]):
                     raise ValueError("alle Werte leer")
-            rows.append(item)
-            with connect() as conn:
-                if kind == "electricity":
-                    dup = conn.execute("""SELECT e.entry_id FROM entries e JOIN consumption_electricity c ON e.entry_id=c.entry_id
-                                      WHERE e.subtype='electricity' AND e.date=? AND e.time=? AND ifnull(c.consumption_meter_kwh,-1)=ifnull(?, -1)
-                                      AND ifnull(c.feedin_meter_kwh,-1)=ifnull(?, -1)""",
-                                       (item["date"], item["time"], item["consumption_meter_kwh"], item["feedin_meter_kwh"])).fetchone()
-                elif kind == "water":
-                    dup = conn.execute("""SELECT e.entry_id FROM entries e JOIN consumption_water w ON e.entry_id=w.entry_id
-                                      WHERE e.subtype='water' AND e.date=? AND e.time=? AND w.water_meter_m3=?""",
-                                       (item["date"], item["time"], item["water_meter_m3"])).fetchone()
-                else:
+                with connect() as conn:
                     dup = conn.execute("""SELECT e.entry_id FROM entries e JOIN consumption_fuel f ON e.entry_id=f.entry_id
-                                      WHERE e.subtype='fuel' AND e.date=? AND e.time=? AND ifnull(f.odometer_km,-1)=ifnull(?, -1)""",
-                                       (item["date"], item["time"], item["odometer_km"])).fetchone()
-                if dup:
-                    warnings.append(f"Zeile {idx}: mögliches Duplikat")
+                        WHERE e.subtype='fuel' AND e.date=? AND e.time=? AND ifnull(f.odometer_km,-1)=ifnull(?, -1)""",
+                        (date, time, item["odometer_km"])).fetchone()
+                    if dup:
+                        warnings.append(f"Zeile {idx}: mögliches Duplikat")
+
+            rows.append(item)
         except Exception as ex:
             errors.append(f"Zeile {idx}: {ex}")
     return rows, warnings, errors
@@ -676,7 +773,46 @@ def parse_import_csv(kind, file_storage):
 def import_rows(kind, rows, device_type="import", ua="csv import"):
     created = 0
     for row in rows:
-        if kind == "electricity":
+        if kind == "meal":
+            with connect() as conn:
+                pid = _get_or_create_person(conn, row["person"])
+                food_ids = []
+                for fname in row["food_names"]:
+                    fid = _get_or_create_food(conn, fname)
+                    if fid:
+                        food_ids.append(fid)
+            save_meal(pid, row["date"], row["time"], food_ids, device_type, ua)
+        elif kind == "illness":
+            subtype = row["subtype"]
+            with connect() as conn:
+                pid = _get_or_create_person(conn, row["person"])
+            notes = row.get("notes", "")
+            if subtype == "abdominal_pain":
+                save_abdominal_pain(pid, row["date"], row["time"], [], notes, device_type, ua)
+            elif subtype == "fever":
+                save_fever(pid, row["date"], row["time"], row["temperature_c"], notes, device_type, ua)
+            elif subtype == "medication":
+                with connect() as conn:
+                    med_ids = [_get_or_create_medication(conn, m) for m in row["medication_names"]]
+                    med_ids = [m for m in med_ids if m]
+                save_medications(pid, row["date"], row["time"], med_ids, notes, device_type, ua)
+            elif subtype == "symptoms":
+                with connect() as conn:
+                    sym_ids = []
+                    for sname in row.get("symptom_names", []):
+                        sname = sname.strip()
+                        if not sname:
+                            continue
+                        r2 = conn.execute("SELECT symptom_id FROM symptoms_master WHERE lower(symptom_name)=lower(?)", (sname,)).fetchone()
+                        if r2:
+                            sym_ids.append(r2["symptom_id"])
+                        else:
+                            cur = conn.execute("INSERT INTO symptoms_master(symptom_name, usage_count, is_active) VALUES (?,0,1)", (sname,))
+                            sym_ids.append(cur.lastrowid)
+                save_symptoms(pid, row["date"], row["time"], sym_ids, notes, device_type, ua)
+            elif subtype == "other":
+                save_other_illness(pid, row["date"], row["time"], notes, device_type, ua)
+        elif kind == "electricity":
             save_electricity(row["date"], row["time"], row["consumption_meter_kwh"], row["feedin_meter_kwh"], row["notes"], device_type, ua)
         elif kind == "water":
             save_water(row["date"], row["time"], row["water_meter_m3"], row["notes"], device_type, ua)

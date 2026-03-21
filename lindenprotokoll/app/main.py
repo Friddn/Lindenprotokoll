@@ -448,6 +448,22 @@ def export_consumption(): return csv_resp(export_consumption_csv(), f"lindenprot
 @app.route("/verwaltung")
 def verwaltung(): return render_template("admin_index.html", **base_context())
 
+@app.route("/admin/duplicates", methods=["GET", "POST"])
+def admin_duplicates():
+    if request.method == "POST":
+        ids = request.form.getlist("entry_ids")
+        deleted = 0
+        for eid in ids:
+            try:
+                delete_entry(int(eid))
+                deleted += 1
+            except Exception:
+                pass
+        flash(f"{deleted} Eintrag/Einträge gelöscht.", "success")
+        return redirect(url_for("admin_duplicates"))
+    duplicates = find_duplicates()
+    return render_template("admin_duplicates.html", duplicates=duplicates, **base_context())
+
 @app.route("/verwaltung/personen", methods=["GET", "POST"])
 def admin_people():
     if request.method == "POST":

@@ -22,5 +22,5 @@
 {% if details.entry.subtype == 'electricity' %}<a class="big-button link-button" href="{{ url_for('edit_electricity', entry_id=details.entry.entry_id) }}">Bearbeiten</a>{% endif %}
 {% if details.entry.subtype == 'water' %}<a class="big-button link-button" href="{{ url_for('edit_water', entry_id=details.entry.entry_id) }}">Bearbeiten</a>{% endif %}
 {% if details.entry.subtype == 'fuel' %}<a class="big-button link-button" href="{{ url_for('edit_fuel', entry_id=details.entry.entry_id) }}">Bearbeiten</a>{% endif %}
-<form method="post" action="{{ url_for('entry_delete', entry_id=details.entry.entry_id) }}"><button class="secondary-button" type="submit">Löschen</button></form>
+<form method="post" action="{{ url_for('entry_delete', entry_id=details.entry.entry_id) }}" onsubmit="return confirm('Eintrag wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.')"><button class="secondary-button" type="submit">Löschen</button></form>
 </div></div>{% endblock %}

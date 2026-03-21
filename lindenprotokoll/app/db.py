@@ -526,6 +526,40 @@ def get_entry_details(entry_id):
             details.update(dict(row))
     return details
 
+def find_duplicates():
+    """Find entries with identical subtype, person_id, date and time."""
+    with connect() as conn:
+        rows = conn.execute("""
+            SELECT e.subtype, e.person_id, p.display_name AS person_name, e.date, e.time,
+                   COUNT(*) AS cnt,
+                   GROUP_CONCAT(e.entry_id ORDER BY e.entry_id) AS entry_ids
+            FROM entries e
+            LEFT JOIN people p ON e.person_id = p.person_id
+            GROUP BY e.subtype, e.person_id, e.date, e.time
+            HAVING COUNT(*) > 1
+            ORDER BY e.date DESC, e.time DESC
+        """).fetchall()
+
+    SUBTYPE_LABELS = {
+        'meal': 'Essen', 'abdominal_pain': 'Bauchschmerzen', 'fever': 'Fieber',
+        'medication': 'Medikamente', 'symptoms': 'Symptome', 'other': 'Anderes',
+        'electricity': 'Strom', 'water': 'Wasser', 'fuel': 'Auto',
+    }
+
+    result = []
+    for row in rows:
+        ids = [int(i) for i in row['entry_ids'].split(',')]
+        result.append({
+            'subtype': row['subtype'],
+            'subtype_label': SUBTYPE_LABELS.get(row['subtype'], row['subtype']),
+            'person_name': row['person_name'] or '—',
+            'date': row['date'],
+            'time': row['time'],
+            'count': row['cnt'],
+            'entry_ids': ids,
+        })
+    return result
+
 def delete_entry(entry_id):
     with connect() as conn:
         conn.execute("DELETE FROM entries WHERE entry_id=?", (entry_id,))

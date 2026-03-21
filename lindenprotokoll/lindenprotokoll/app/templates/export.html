@@ -1,0 +1,7 @@
+{% extends "base.html" %}{% block content %}
+<div class="card"><h2>CSV-Export</h2>
+<a class="big-button link-button" href="{{ url_for('export_all') }}">Alle Einträge exportieren</a>
+<a class="big-button link-button" href="{{ url_for('export_meal') }}">Essen exportieren</a>
+<a class="big-button link-button" href="{{ url_for('export_illness') }}">Krank exportieren</a>
+<a class="big-button link-button" href="{{ url_for('export_consumption') }}">Verbrauch exportieren</a>
+</div>{% endblock %}

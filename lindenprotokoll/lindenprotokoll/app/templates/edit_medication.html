@@ -1,0 +1,9 @@
+{% extends "base.html" %}{% block content %}
+<div class="card"><h2>Medikamente bearbeiten</h2>
+<form method="post">
+<label>Person</label><select name="person_id">{% for p in people %}<option value="{{ p.person_id }}" {% if details.entry.person_id == p.person_id %}selected{% endif %}>{{ p.display_name }}</option>{% endfor %}</select>
+<div class="list">{% for med in medications %}<label class="option"><input type="checkbox" name="medication_ids" value="{{ med.medication_id }}" {% if med.medication_id in details.medications %}checked{% endif %}><span>{{ med.medication_name }}</span></label>{% endfor %}</div>
+<label>Freitext</label><textarea name="notes" rows="4">{{ details.notes or "" }}</textarea>
+<label>Datum</label><input type="date" name="date" value="{{ details.entry.date }}" required>
+<label>Uhrzeit</label><input type="time" name="time" value="{{ details.entry.time }}" required>
+<button class="big-button" type="submit">Aktualisieren</button></form></div>{% endblock %}

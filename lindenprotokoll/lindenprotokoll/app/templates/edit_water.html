@@ -1,0 +1,8 @@
+{% extends "base.html" %}{% block content %}
+<div class="card"><h2>Wasser bearbeiten</h2><form method="post">
+<label>Wasser Zählerstand (m³)</label><input type="number" name="water_meter_m3" value="{{ details.water_meter_m3 }}" required>
+<label>Freitext</label><textarea name="notes" rows="3">{{ details.notes or "" }}</textarea>
+<label>Datum</label><input type="date" name="date" value="{{ details.entry.date }}" required>
+<label>Uhrzeit</label><input type="time" name="time" value="{{ details.entry.time }}" required>
+<button class="big-button" type="submit">Aktualisieren</button>
+</form></div>{% endblock %}

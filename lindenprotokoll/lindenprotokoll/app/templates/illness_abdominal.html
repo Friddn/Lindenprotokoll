@@ -1,0 +1,10 @@
+{% extends "base.html" %}{% block content %}
+<div class="card"><h2>Bauchschmerzen</h2>
+{% if image_url %}<img src="{{ image_url }}" class="abdominal-image" alt="Bauch">{% else %}<p class="muted">Kein Bild konfiguriert.</p>{% endif %}
+<form method="post">
+<div class="list compact-list">{% for region in [0,1,2,3,4,5,6] %}<label class="option"><input type="checkbox" name="regions" value="{{ region }}"><span>{{ region }}</span></label>{% endfor %}</div>
+<label>Freitext</label><textarea name="notes" rows="4"></textarea>
+<label>Datum</label><input type="date" name="date" value="{{ date_value }}" required>
+<label>Uhrzeit</label><input type="time" name="time" value="{{ time_value }}" required>
+<button class="big-button" type="submit">Speichern</button></form></div>
+{% endblock %}

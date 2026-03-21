@@ -1,0 +1,11 @@
+{% extends "base.html" %}{% block content %}
+<div class="card"><h2>Auto bearbeiten</h2><p class="muted">Fahrzeug: Kangoo</p><form method="post">
+<label>Kilometerstand (km)</label><input type="number" name="odometer_km" value="{{ details.odometer_km or '' }}">
+<label>Gesamtbetrag (€)</label><input type="number" step="0.01" name="total_price_eur" value="{{ details.total_price_eur or '' }}">
+<label>Menge (Liter)</label><input type="number" step="0.01" name="liters" value="{{ details.liters or '' }}">
+<label>Literpreis</label><input type="number" step="0.001" name="price_per_liter" value="{{ details.price_per_liter or '' }}">
+<label>Freitext</label><textarea name="notes" rows="3">{{ details.notes or "" }}</textarea>
+<label>Datum</label><input type="date" name="date" value="{{ details.entry.date }}" required>
+<label>Uhrzeit</label><input type="time" name="time" value="{{ details.entry.time }}" required>
+<button class="big-button" type="submit">Aktualisieren</button>
+</form></div>{% endblock %}

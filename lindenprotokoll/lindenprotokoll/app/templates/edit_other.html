@@ -1,0 +1,7 @@
+{% extends "base.html" %}{% block content %}
+<div class="card"><h2>Anderes bearbeiten</h2><form method="post">
+<label>Person</label><select name="person_id">{% for p in people %}<option value="{{ p.person_id }}" {% if details.entry.person_id == p.person_id %}selected{% endif %}>{{ p.display_name }}</option>{% endfor %}</select>
+<label>Freitext</label><textarea name="notes" rows="5">{{ details.notes or "" }}</textarea>
+<label>Datum</label><input type="date" name="date" value="{{ details.entry.date }}" required>
+<label>Uhrzeit</label><input type="time" name="time" value="{{ details.entry.time }}" required>
+<button class="big-button" type="submit">Aktualisieren</button></form></div>{% endblock %}

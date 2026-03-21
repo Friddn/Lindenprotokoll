@@ -1,0 +1,10 @@
+{% extends "base.html" %}{% block content %}
+<div class="card"><h2>Strom</h2><form method="post">
+<label>Verbrauch Zählerstand (kWh)</label><input type="number" name="consumption_meter_kwh" min="0" max="999999" step="1">
+<label>Einspeise Zählerstand (kWh)</label><input type="number" name="feedin_meter_kwh" min="0" max="999999" step="1">
+<label>Freitext</label><textarea name="notes" rows="3"></textarea>
+<label>Datum</label><input type="date" name="date" value="{{ date_value }}" required>
+<label>Uhrzeit</label><input type="time" name="time" value="{{ time_value }}" required>
+<button class="big-button" type="submit" name="save_mode" value="back">Speichern</button>
+<button class="secondary-button" type="submit" name="save_mode" value="stay">Speichern + weiterer Eintrag</button>
+</form></div>{% endblock %}

@@ -1,0 +1,16 @@
+{% extends "base.html" %}{% block content %}
+<div class="card"><h2>Symptome bearbeiten</h2>
+<form method="post">
+<label>Person</label><select name="person_id">{% for p in people %}<option value="{{ p.person_id }}" {% if p.person_id == details.entry.person_id %}selected{% endif %}>{{ p.display_name }}</option>{% endfor %}</select>
+<label>Suche</label><input id="symptom-search" type="text" placeholder="Symptom suchen...">
+<div class="list">{% for item in symptoms %}<label class="option food-option" data-name="{{ item.symptom_name|lower }}"><input type="checkbox" name="symptom_ids" value="{{ item.symptom_id }}" {% if item.symptom_id in selected_symptom_ids %}checked{% endif %}><span>{{ item.symptom_name }}</span></label>{% endfor %}</div>
+<label>Freitext (optional)</label><input type="text" name="notes" value="{{ details.notes or '' }}" placeholder="Notiz...">
+<label>Datum</label><input type="date" name="date" value="{{ details.entry.date }}" required>
+<label>Uhrzeit</label><input type="time" name="time" value="{{ details.entry.time }}" required>
+<button class="big-button" type="submit">Aktualisieren</button>
+</form></div>
+<script>
+document.addEventListener("DOMContentLoaded", ()=>{ const s=document.getElementById("symptom-search"); if(!s) return;
+s.addEventListener("input", ()=>{ const q=s.value.trim().toLowerCase(); document.querySelectorAll(".food-option").forEach(r=>r.style.display=(r.dataset.name||"").includes(q)?"flex":"none");});});
+</script>
+{% endblock %}

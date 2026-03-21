@@ -1,0 +1,15 @@
+{% extends "base.html" %}{% block content %}
+<div class="card"><h2>Protokoll Essen</h2><p class="muted">Sortierung: {{ "Alphabetisch" if food_sort_mode == "alpha" else "Häufigste zuerst" }}</p>
+<form method="post" action="{{ url_for('meal_save') }}">
+<label>Suche</label><input id="food-search" type="text" placeholder="Eintrag suchen...">
+<div class="list">{% for item in food_items %}<label class="option food-option" data-name="{{ item.food_name|lower }}"><input type="checkbox" name="food_ids" value="{{ item.food_id }}"><span>{{ item.food_name }}</span></label>{% endfor %}</div>
+<label>Datum</label><input type="date" name="date" value="{{ date_value }}" required>
+<label>Uhrzeit</label><input type="time" name="time" value="{{ time_value }}" required>
+<button class="big-button" type="submit">Speichern</button></form><hr>
+<form method="post"><label>Neues Essen hinzufügen</label><input type="text" name="new_food_name" placeholder="Neuer Eintrag"><button class="secondary-button" type="submit">Hinzufügen</button></form>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", ()=>{ const s=document.getElementById("food-search"); if(!s) return;
+s.addEventListener("input", ()=>{ const q=s.value.trim().toLowerCase(); document.querySelectorAll(".food-option").forEach(r=>r.style.display=(r.dataset.name||"").includes(q)?"flex":"none");});});
+</script>
+{% endblock %}

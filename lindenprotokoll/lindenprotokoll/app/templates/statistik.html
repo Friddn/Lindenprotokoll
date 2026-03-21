@@ -1,0 +1,164 @@
+{% extends "base.html" %}{% block content %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+.filter-row { display:flex; gap:.75rem; flex-wrap:wrap; align-items:flex-end; margin-bottom:1.25rem; }
+.filter-row > div { display:flex; flex-direction:column; gap:.25rem; }
+.filter-row label { font-size:.8rem; color:#666; }
+.filter-row select { padding:.3rem .5rem; border:1px solid #ccc; border-radius:6px; font-size:.9rem; }
+.filter-row button { padding:.35rem .9rem; border-radius:6px; border:none; background:var(--color-primary,#3b82f6); color:#fff; cursor:pointer; font-size:.9rem; align-self:flex-end; }
+canvas { max-height:280px; }
+.section-title { font-size:1rem; font-weight:600; margin:.5rem 0 .75rem; }
+.pain-day-list table { width:100%; border-collapse:collapse; }
+.pain-day-list td, .pain-day-list th { padding:.4rem .6rem; border-bottom:1px solid #eee; text-align:left; vertical-align:top; }
+.pain-day-list th { font-weight:600; color:#555; font-size:.8rem; }
+.food-badge { display:inline-block; padding:.1rem .45rem; border-radius:10px; font-size:.78rem; background:#dbeafe; color:#1d4ed8; margin:.1rem; }
+.suspect-bar { display:flex; align-items:center; gap:.5rem; margin:.25rem 0; font-size:.85rem; }
+.suspect-bar-fill { height:14px; border-radius:4px; background:#f97316; min-width:4px; }
+.muted { color:#888; font-size:.9rem; }
+</style>
+
+<div class="card">
+  <h2>Statistik – Bauchschmerzen &amp; Essen</h2>
+
+  <form method="get" class="filter-row">
+    <div>
+      <label>Person</label>
+      <select name="person_id">
+        <option value="">Alle</option>
+        {% for p in people %}
+        <option value="{{ p.person_id }}" {% if selected_person_id == p.person_id %}selected{% endif %}>{{ p.display_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Zeitraum</label>
+      <select name="period">
+        <option value="30"  {% if selected_period==30  %}selected{% endif %}>30 Tage</option>
+        <option value="90"  {% if selected_period==90  %}selected{% endif %}>90 Tage</option>
+        <option value="180" {% if selected_period==180 %}selected{% endif %}>6 Monate</option>
+        <option value="365" {% if selected_period==365 %}selected{% endif %}>1 Jahr</option>
+        <option value="0"   {% if selected_period==0   %}selected{% endif %}>Alle</option>
+      </select>
+    </div>
+    <button type="submit">Anzeigen</button>
+  </form>
+
+  <p class="section-title">Zeitverlauf: Mahlzeiten &amp; Bauchschmerzen</p>
+  <p class="muted" style="font-size:.8rem;margin-top:-.5rem;margin-bottom:.75rem;">Balken = Anzahl Mahlzeiten pro Tag &nbsp;|&nbsp; Rot = Bauchschmerzen</p>
+  <div style="position:relative;width:100%;margin-bottom:1.5rem;"><canvas id="chartTimeline"></canvas></div>
+
+  <p class="section-title">Häufigste Lebensmittel an Schmerztagen (und Vortag)</p>
+  <div id="suspect-bars"></div>
+  <p id="suspect-empty" class="muted" style="display:none">Keine Bauchschmerz-Tage im Zeitraum.</p>
+
+  <p class="section-title" style="margin-top:1.25rem;">Schmerztage im Detail</p>
+  <div class="pain-day-list">
+    <table id="pain-table">
+      <thead><tr><th>Datum</th><th>Gegessen (selber Tag)</th><th>Gegessen (Vortag)</th></tr></thead>
+      <tbody id="pain-table-body"></tbody>
+    </table>
+    <p id="pain-table-empty" class="muted" style="display:none">Keine Bauchschmerz-Tage im Zeitraum.</p>
+  </div>
+</div>
+
+<script>
+const RAW = {{ stats_json | safe }};
+
+// meal lookup: date -> [food, food, ...]
+const mealsByDate = {};
+for (const m of RAW.meals) {
+  if (!mealsByDate[m.date]) mealsByDate[m.date] = [];
+  if (m.foods) for (const f of m.foods.split(', ')) if (f) mealsByDate[m.date].push(f);
+}
+
+// meal count per day
+const mealCountByDate = {};
+for (const m of RAW.meals) mealCountByDate[m.date] = (mealCountByDate[m.date]||0) + 1;
+
+const hasPainOn = {};
+for (const a of RAW.abdominal) hasPainOn[a.date] = true;
+
+const allDates = [...new Set([
+  ...RAW.meals.map(m=>m.date),
+  ...RAW.abdominal.map(a=>a.date)
+])].sort();
+
+// Timeline chart
+new Chart(document.getElementById('chartTimeline').getContext('2d'), {
+  data: {
+    labels: allDates,
+    datasets: [
+      { type:'bar', label:'Mahlzeiten', data: allDates.map(d=>mealCountByDate[d]||0),
+        backgroundColor:'#93c5fd', yAxisID:'yMeal', order:2 },
+      { type:'bar', label:'Bauchschmerzen', data: allDates.map(d=>hasPainOn[d]?1:0),
+        backgroundColor:'#ef444488', borderColor:'#ef4444', borderWidth:1,
+        yAxisID:'yPain', order:1 }
+    ]
+  },
+  options: {
+    interaction: { mode:'index', intersect:false },
+    scales: {
+      x: { ticks: { maxTicksLimit:16, maxRotation:45 } },
+      yMeal: { position:'left', title:{display:true,text:'Mahlzeiten'},
+        ticks:{precision:0,stepSize:1}, grid:{display:true} },
+      yPain: { position:'right', min:0, max:1,
+        ticks:{display:false}, grid:{display:false} }
+    },
+    plugins: {
+      legend: { display:true },
+      tooltip: {
+        callbacks: {
+          afterBody(items) {
+            const date = items[0]?.label;
+            const foods = mealsByDate[date];
+            if (foods && foods.length) return ['','Gegessen:', ...foods.slice(0,8).map(f=>'  • '+f)];
+            return [];
+          }
+        }
+      }
+    }
+  }
+});
+
+// Suspect foods
+const suspectBars = document.getElementById('suspect-bars');
+if (!RAW.top_suspect_foods.length) {
+  document.getElementById('suspect-empty').style.display='';
+} else {
+  const max = RAW.top_suspect_foods[0].cnt;
+  for (const item of RAW.top_suspect_foods) {
+    const pct = Math.max(Math.round(item.cnt/max*100), 3);
+    const d = document.createElement('div');
+    d.className = 'suspect-bar';
+    d.innerHTML = `<span style="width:150px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis" title="${item.food_name}">${item.food_name}</span>`+
+      `<div class="suspect-bar-fill" style="width:${pct}%"></div>`+
+      `<span style="color:#666">${item.cnt}&times;</span>`;
+    suspectBars.appendChild(d);
+  }
+}
+
+// Detail table
+function prevDate(d) {
+  const dt = new Date(d+'T12:00:00');
+  dt.setDate(dt.getDate()-1);
+  return dt.toISOString().slice(0,10);
+}
+const painDays = [...new Set(RAW.abdominal.map(a=>a.date))].sort().reverse();
+if (!painDays.length) {
+  document.getElementById('pain-table-empty').style.display='';
+  document.getElementById('pain-table').style.display='none';
+} else {
+  const tbody = document.getElementById('pain-table-body');
+  for (const date of painDays) {
+    const foods = mealsByDate[date]||[];
+    const prev  = mealsByDate[prevDate(date)]||[];
+    const badge = f=>`<span class="food-badge">${f}</span>`;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td><strong>${date}</strong></td>`+
+      `<td>${foods.length?foods.map(badge).join(' '):'<span class="muted">—</span>'}</td>`+
+      `<td>${prev.length?prev.map(badge).join(' '):'<span class="muted">—</span>'}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,9 @@
+{% extends "base.html" %}{% block content %}
+<div class="card"><h2>Personen</h2>
+<form method="post"><input type="hidden" name="action" value="add"><label>Neue Person</label><input type="text" name="name"><button class="secondary-button" type="submit">Hinzufügen / Reaktivieren</button></form>
+<hr><h3>Aktiv</h3><div class="list">{% for item in active_people %}
+<div class="manage-row"><form method="post" class="manage-form"><input type="hidden" name="action" value="rename"><input type="hidden" name="person_id" value="{{ item.person_id }}"><input type="text" name="name" value="{{ item.display_name }}"><button type="submit">Umbenennen</button></form>
+<form method="post"><input type="hidden" name="action" value="deactivate"><input type="hidden" name="person_id" value="{{ item.person_id }}"><button type="submit">Deaktivieren</button></form></div>{% endfor %}</div>
+<hr><h3>Inaktiv</h3><div class="list">{% for item in inactive_people %}
+<div class="manage-row"><span>{{ item.display_name }}</span><form method="post"><input type="hidden" name="action" value="reactivate"><input type="hidden" name="person_id" value="{{ item.person_id }}"><button type="submit">Reaktivieren</button></form></div>
+{% else %}<p class="muted">Keine inaktiven Personen.</p>{% endfor %}</div></div>{% endblock %}

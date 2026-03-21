@@ -6,6 +6,7 @@ APP_TZ = ZoneInfo("Europe/Berlin")
 from io import BytesIO
 import json
 from flask import Flask, flash, redirect, render_template, request, send_file, session, url_for
+import mimetypes, os
 
 from config import DEBUG, HOST, PORT, SECRET_KEY
 from db import *
@@ -436,6 +437,19 @@ def entry_delete(entry_id):
 def export_page():
     return render_template("export.html", **base_context())
 
+@app.route("/statistik")
+def statistik():
+    import json
+    person_id = request.args.get("person_id", type=int)
+    period_days = request.args.get("period", 90, type=int)
+    data = get_stats_data(person_id=person_id, period_days=period_days)
+    return render_template("statistik.html",
+        stats_json=json.dumps(data, ensure_ascii=False),
+        people=data["people"],
+        selected_person_id=person_id,
+        selected_period=period_days,
+        **base_context())
+
 @app.route("/export/all.csv")
 def export_all(): return csv_resp(export_entries_csv(), f"lindenprotokoll_all_{datetime.now(APP_TZ).strftime('%Y-%m-%d_%H-%M-%S')}.csv")
 @app.route("/export/meal.csv")
@@ -523,13 +537,51 @@ def admin_lists():
                            active_symptoms=get_symptoms(True), inactive_symptoms=[r for r in get_symptoms(False) if r["is_active"] == 0],
                            **base_context())
 
+@app.route("/abdominal-image")
+def abdominal_image():
+    from config import DATA_DIR
+    import mimetypes, os
+    for ext in [".png", ".jpg", ".jpeg", ".gif", ".webp"]:
+        p = DATA_DIR / ("abdominal_image" + ext)
+        if p.exists():
+            mime = mimetypes.guess_type(str(p))[0] or "image/png"
+            return send_file(str(p), mimetype=mime)
+    return "", 404
+
 @app.route("/verwaltung/bauchschmerzen", methods=["GET", "POST"])
 def admin_abdominal():
+    from config import DATA_DIR
+    import os
+    upload_error = None
     if request.method == "POST":
-        set_setting("abdominal_image_url", request.form.get("abdominal_image_url","").strip())
-        flash("Bild-URL gespeichert.", "success")
-        return redirect(url_for("admin_abdominal"))
-    return render_template("admin_abdominal.html", abdominal_image_url=get_setting("abdominal_image_url", ""), **base_context())
+        f = request.files.get("abdominal_image_file")
+        if f and f.filename:
+            ext = os.path.splitext(f.filename)[1].lower()
+            if ext not in (".png", ".jpg", ".jpeg", ".gif", ".webp"):
+                upload_error = "Nur Bildformate erlaubt (png, jpg, gif, webp)."
+            else:
+                for old_ext in [".png", ".jpg", ".jpeg", ".gif", ".webp"]:
+                    old_p = DATA_DIR / ("abdominal_image" + old_ext)
+                    if old_p.exists():
+                        old_p.unlink()
+                save_path = DATA_DIR / ("abdominal_image" + ext)
+                f.save(str(save_path))
+                set_setting("abdominal_image_url", url_for("abdominal_image"))
+                flash("Bild hochgeladen.", "success")
+                return redirect(url_for("admin_abdominal"))
+        else:
+            set_setting("abdominal_image_url", request.form.get("abdominal_image_url", "").strip())
+            flash("Gespeichert.", "success")
+            return redirect(url_for("admin_abdominal"))
+    has_upload = any(
+        (DATA_DIR / ("abdominal_image" + ext)).exists()
+        for ext in [".png", ".jpg", ".jpeg", ".gif", ".webp"]
+    )
+    return render_template("admin_abdominal.html",
+        abdominal_image_url=get_setting("abdominal_image_url", ""),
+        has_upload=has_upload,
+        upload_error=upload_error,
+        **base_context())
 
 @app.route("/verwaltung/import", methods=["GET", "POST"])
 def admin_import():

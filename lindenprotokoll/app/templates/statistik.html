@@ -1,5 +1,6 @@
 {% extends "base.html" %}{% block content %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 <style>
 .filter-row { display:flex; gap:.75rem; flex-wrap:wrap; align-items:flex-end; margin-bottom:1.25rem; }
 .filter-row > div { display:flex; flex-direction:column; gap:.25rem; }
@@ -369,7 +370,8 @@ function renderElec() {
     options: {
       interaction:{ mode:'index', intersect:false },
       scales: {
-        x:{ ticks:{ maxTicksLimit:16, maxRotation:45 } },
+        x:{ type:'time', time:{ unit:'day', tooltipFormat:'yyyy-MM-dd', displayFormats:{ day:'dd.MM', month:'MMM yy' } },
+            ticks:{ maxTicksLimit:16, maxRotation:45 } },
         y:{ ticks:{ precision:2 }, title:{ display:true,
           text: mode==='meter' ? 'kWh (Zählerstand)' : mode==='delta' ? 'kWh (Δ)' : 'kWh/Tag (Ø)' } }
       },
@@ -402,7 +404,8 @@ function renderElec() {
     options: {
       interaction:{ mode:'index', intersect:false },
       scales: {
-        x:{ ticks:{ maxTicksLimit:16, maxRotation:45 } },
+        x:{ type:'time', time:{ unit:'day', tooltipFormat:'yyyy-MM-dd', displayFormats:{ day:'dd.MM', month:'MMM yy' } },
+            ticks:{ maxTicksLimit:16, maxRotation:45 } },
         y:{ title:{ display:true, text:'kWh/Tag (Ø)' }, ticks:{ precision:2 } }
       },
       plugins:{ legend:{ display:true },

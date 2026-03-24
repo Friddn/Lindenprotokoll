@@ -1,10 +1,30 @@
 {% extends "base.html" %}{% block content %}
 <div class="card">
 <h2>Duplikate</h2>
+
+<div style="margin-bottom:1rem;display:flex;gap:1rem;flex-wrap:wrap;align-items:center;">
+  <a class="{% if exact %}big-button{% else %}secondary-button{% endif %} link-button"
+     href="{{ url_for('admin_duplicates', exact='1') }}">
+    Nur exakte Duplikate <small style="font-size:.75rem;opacity:.8">(gleiche Einträge)</small>
+  </a>
+  <a class="{% if not exact %}big-button{% else %}secondary-button{% endif %} link-button"
+     href="{{ url_for('admin_duplicates', exact='0') }}">
+    Alle Zeitstempel-Duplikate
+  </a>
+</div>
+
+<p class="muted" style="font-size:.85rem;margin-bottom:1rem;">
+  {% if exact %}
+    <strong>Exakt:</strong> Gleicher Typ / Person / Datum / Uhrzeit <em>und</em> gleiche Einträge (Lebensmittel, Symptome, Werte…)
+  {% else %}
+    <strong>Zeitstempel:</strong> Gleicher Typ / Person / Datum / Uhrzeit – Inhalte können abweichen
+  {% endif %}
+</p>
+
 {% if not duplicates %}
 <p class="muted">Keine Duplikate gefunden. ✓</p>
 {% else %}
-<p class="muted">{{ duplicates|length }} Gruppe(n) mit identischen Datum/Uhrzeit/Typ/Person gefunden. Einträge zum Löschen markieren und bestätigen.</p>
+<p class="muted">{{ duplicates|length }} Gruppe(n) gefunden. Einträge zum Löschen markieren und bestätigen.</p>
 <form method="post" onsubmit="return confirm('Markierte Einträge wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.')">
 {% for group in duplicates %}
 <div class="card" style="margin-bottom:1rem;border:1px solid var(--color-border,#ddd);padding:1rem;">

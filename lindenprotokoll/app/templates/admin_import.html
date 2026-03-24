@@ -12,9 +12,11 @@
 <p class="muted">Spalten: <code>person, date (YYYY-MM-DD), time (HH:MM), foods (mit " | " getrennt)</code><br>
 Personen und Essen werden automatisch angelegt wenn sie noch nicht existieren.</p>
 {% elif kind == 'illness' %}
-<p class="muted">Spalten: <code>subtype, person, date (YYYY-MM-DD), time (HH:MM), temperature_c, medications (mit " | " getrennt), notes</code><br>
-Subtypen: <code>abdominal_pain, fever, medication, other, symptoms</code><br>
-Personen und Medikamente werden automatisch angelegt.</p>
+<p class="muted">
+  Spalten: <code>subtype, person, date (YYYY-MM-DD), time (HH:MM), temperature_c, regions, medications (mit " | " getrennt), symptoms (mit " | " getrennt), notes</code><br>
+  Subtypen: <code>abdominal_pain, fever, medication, symptoms, other</code><br>
+  Personen, Medikamente und Symptome werden automatisch angelegt.
+</p>
 {% else %}
 <p class="muted">Vorlage herunterladen und ausfüllen.</p>
 {% endif %}

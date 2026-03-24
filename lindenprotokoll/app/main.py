@@ -466,6 +466,7 @@ def verwaltung(): return render_template("admin_index.html", **base_context())
 
 @app.route("/admin/duplicates", methods=["GET", "POST"])
 def admin_duplicates():
+    exact = request.args.get("exact", "1") != "0"
     if request.method == "POST":
         ids = request.form.getlist("entry_ids")
         deleted = 0
@@ -476,9 +477,9 @@ def admin_duplicates():
             except Exception:
                 pass
         flash(f"{deleted} Eintrag/Einträge gelöscht.", "success")
-        return redirect(url_for("admin_duplicates"))
-    duplicates = find_duplicates()
-    return render_template("admin_duplicates.html", duplicates=duplicates, **base_context())
+        return redirect(url_for("admin_duplicates", exact="1" if exact else "0"))
+    duplicates = find_duplicates(exact_content=exact)
+    return render_template("admin_duplicates.html", duplicates=duplicates, exact=exact, **base_context())
 
 @app.route("/verwaltung/personen", methods=["GET", "POST"])
 def admin_people():

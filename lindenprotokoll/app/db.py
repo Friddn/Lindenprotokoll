@@ -612,8 +612,56 @@ def get_stats_data(person_id=None, period_days=90):
         "electricity": electricity_data,
     }
 
-def find_duplicates():
-    """Find entries with identical subtype, person_id, date and time."""
+def _entry_content_signature(conn, entry_id, subtype):
+    """Return a hashable signature of the entry's actual content for exact-duplicate detection."""
+    if subtype == 'meal':
+        ids = tuple(sorted(r["food_id"] for r in conn.execute(
+            "SELECT food_id FROM meal_food_links WHERE entry_id=?", (entry_id,))))
+        return ids
+    elif subtype == 'abdominal_pain':
+        regions = tuple(sorted(r["region"] for r in conn.execute(
+            "SELECT region FROM illness_abdominal_regions WHERE entry_id=?", (entry_id,))))
+        row = conn.execute("SELECT notes FROM illness_abdominal_notes WHERE entry_id=?", (entry_id,)).fetchone()
+        notes = (row["notes"] or "").strip() if row else ""
+        return (regions, notes)
+    elif subtype == 'fever':
+        row = conn.execute("SELECT temperature_c, notes FROM illness_fever WHERE entry_id=?", (entry_id,)).fetchone()
+        return (row["temperature_c"], (row["notes"] or "").strip()) if row else None
+    elif subtype == 'medication':
+        ids = tuple(sorted(r["medication_id"] for r in conn.execute(
+            "SELECT medication_id FROM illness_medication_links WHERE entry_id=?", (entry_id,))))
+        row = conn.execute("SELECT notes FROM illness_medication_notes WHERE entry_id=?", (entry_id,)).fetchone()
+        notes = (row["notes"] or "").strip() if row else ""
+        return (ids, notes)
+    elif subtype == 'symptoms':
+        ids = tuple(sorted(r["symptom_id"] for r in conn.execute(
+            "SELECT symptom_id FROM illness_symptom_links WHERE entry_id=?", (entry_id,))))
+        row = conn.execute("SELECT notes FROM illness_symptom_notes WHERE entry_id=?", (entry_id,)).fetchone()
+        notes = (row["notes"] or "").strip() if row else ""
+        return (ids, notes)
+    elif subtype == 'other':
+        row = conn.execute("SELECT notes FROM illness_other WHERE entry_id=?", (entry_id,)).fetchone()
+        return (row["notes"] or "").strip() if row else ""
+    elif subtype == 'electricity':
+        row = conn.execute("SELECT consumption_meter_kwh, feedin_meter_kwh FROM consumption_electricity WHERE entry_id=?", (entry_id,)).fetchone()
+        return (row["consumption_meter_kwh"], row["feedin_meter_kwh"]) if row else None
+    elif subtype == 'water':
+        row = conn.execute("SELECT water_meter_m3 FROM consumption_water WHERE entry_id=?", (entry_id,)).fetchone()
+        return row["water_meter_m3"] if row else None
+    elif subtype == 'fuel':
+        row = conn.execute("SELECT vehicle, odometer_km, total_price_eur, liters, price_per_liter FROM consumption_fuel WHERE entry_id=?", (entry_id,)).fetchone()
+        return tuple(row) if row else None
+    return None
+
+
+def find_duplicates(exact_content=True):
+    """Find entries with identical subtype, person_id, date and time.
+    If exact_content=True, also require identical entry content."""
+    SUBTYPE_LABELS = {
+        'meal': 'Essen', 'abdominal_pain': 'Bauchschmerzen', 'fever': 'Fieber',
+        'medication': 'Medikamente', 'symptoms': 'Symptome', 'other': 'Anderes',
+        'electricity': 'Strom', 'water': 'Wasser', 'fuel': 'Auto',
+    }
     with connect() as conn:
         rows = conn.execute("""
             SELECT e.subtype, e.person_id, p.display_name AS person_name, e.date, e.time,
@@ -626,24 +674,34 @@ def find_duplicates():
             ORDER BY e.date DESC, e.time DESC
         """).fetchall()
 
-    SUBTYPE_LABELS = {
-        'meal': 'Essen', 'abdominal_pain': 'Bauchschmerzen', 'fever': 'Fieber',
-        'medication': 'Medikamente', 'symptoms': 'Symptome', 'other': 'Anderes',
-        'electricity': 'Strom', 'water': 'Wasser', 'fuel': 'Auto',
-    }
+        result = []
+        for row in rows:
+            ids = [int(i) for i in row['entry_ids'].split(',')]
+            if exact_content:
+                # Group ids by their content signature; only keep groups where >=2 share a signature
+                from collections import defaultdict
+                sig_groups = defaultdict(list)
+                for eid in ids:
+                    sig = _entry_content_signature(conn, eid, row['subtype'])
+                    sig_groups[sig].append(eid)
+                # Flatten: collect all ids that appear in a group of size >= 2
+                exact_ids = []
+                for sig, group_ids in sig_groups.items():
+                    if len(group_ids) >= 2:
+                        exact_ids.extend(group_ids)
+                if not exact_ids:
+                    continue
+                ids = sorted(exact_ids)
 
-    result = []
-    for row in rows:
-        ids = [int(i) for i in row['entry_ids'].split(',')]
-        result.append({
-            'subtype': row['subtype'],
-            'subtype_label': SUBTYPE_LABELS.get(row['subtype'], row['subtype']),
-            'person_name': row['person_name'] or '—',
-            'date': row['date'],
-            'time': row['time'],
-            'count': row['cnt'],
-            'entry_ids': ids,
-        })
+            result.append({
+                'subtype': row['subtype'],
+                'subtype_label': SUBTYPE_LABELS.get(row['subtype'], row['subtype']),
+                'person_name': row['person_name'] or '—',
+                'date': row['date'],
+                'time': row['time'],
+                'count': len(ids),
+                'entry_ids': ids,
+            })
     return result
 
 def delete_entry(entry_id):
@@ -680,30 +738,39 @@ def export_illness_csv():
     rows = []
     with connect() as conn:
         for r in conn.execute("""SELECT e.entry_id, e.subtype, p.display_name AS person, e.date, e.time,
-            f.temperature_c, '' AS regions, '' AS medications, f.notes AS notes, e.device_type, e.created_at
+            f.temperature_c, '' AS regions, '' AS medications, '' AS symptoms, f.notes AS notes, e.device_type, e.created_at
             FROM entries e LEFT JOIN people p ON e.person_id=p.person_id JOIN illness_fever f ON e.entry_id=f.entry_id"""):
             rows.append(dict(r))
         for r in conn.execute("""SELECT e.entry_id, e.subtype, p.display_name AS person, e.date, e.time,
-            '' AS temperature_c, group_concat(r.region, ' | ') AS regions, '' AS medications, n.notes AS notes, e.device_type, e.created_at
+            '' AS temperature_c, group_concat(r.region, ' | ') AS regions, '' AS medications, '' AS symptoms, n.notes AS notes, e.device_type, e.created_at
             FROM entries e LEFT JOIN people p ON e.person_id=p.person_id
-            JOIN illness_abdominal_notes n ON e.entry_id=n.entry_id
+            LEFT JOIN illness_abdominal_notes n ON e.entry_id=n.entry_id
             LEFT JOIN illness_abdominal_regions r ON e.entry_id=r.entry_id
             WHERE e.subtype='abdominal_pain' GROUP BY e.entry_id"""):
             rows.append(dict(r))
         for r in conn.execute("""SELECT e.entry_id, e.subtype, p.display_name AS person, e.date, e.time,
-            '' AS temperature_c, '' AS regions, group_concat(m.medication_name, ' | ') AS medications, n.notes AS notes, e.device_type, e.created_at
+            '' AS temperature_c, '' AS regions, group_concat(m.medication_name, ' | ') AS medications, '' AS symptoms, n.notes AS notes, e.device_type, e.created_at
             FROM entries e LEFT JOIN people p ON e.person_id=p.person_id
-            JOIN illness_medication_notes n ON e.entry_id=n.entry_id
+            LEFT JOIN illness_medication_notes n ON e.entry_id=n.entry_id
             LEFT JOIN illness_medication_links l ON e.entry_id=l.entry_id
             LEFT JOIN medications_master m ON l.medication_id=m.medication_id
             WHERE e.subtype='medication' GROUP BY e.entry_id"""):
             rows.append(dict(r))
         for r in conn.execute("""SELECT e.entry_id, e.subtype, p.display_name AS person, e.date, e.time,
-            '' AS temperature_c, '' AS regions, '' AS medications, o.notes AS notes, e.device_type, e.created_at
+            '' AS temperature_c, '' AS regions, '' AS medications,
+            group_concat(s.symptom_name, ' | ') AS symptoms, n.notes AS notes, e.device_type, e.created_at
+            FROM entries e LEFT JOIN people p ON e.person_id=p.person_id
+            LEFT JOIN illness_symptom_notes n ON e.entry_id=n.entry_id
+            LEFT JOIN illness_symptom_links l ON e.entry_id=l.entry_id
+            LEFT JOIN symptoms_master s ON l.symptom_id=s.symptom_id
+            WHERE e.subtype='symptoms' GROUP BY e.entry_id"""):
+            rows.append(dict(r))
+        for r in conn.execute("""SELECT e.entry_id, e.subtype, p.display_name AS person, e.date, e.time,
+            '' AS temperature_c, '' AS regions, '' AS medications, '' AS symptoms, o.notes AS notes, e.device_type, e.created_at
             FROM entries e LEFT JOIN people p ON e.person_id=p.person_id JOIN illness_other o ON e.entry_id=o.entry_id"""):
             rows.append(dict(r))
     rows.sort(key=lambda r:(r["date"], r["time"], r["entry_id"]))
-    return _csv_string(rows, ["entry_id","subtype","person","date","time","temperature_c","regions","medications","notes","device_type","created_at"])
+    return _csv_string(rows, ["entry_id","subtype","person","date","time","temperature_c","regions","medications","symptoms","notes","device_type","created_at"])
 
 def export_consumption_csv():
     rows = []
@@ -736,7 +803,7 @@ def template_csv(kind):
     if kind == "meal":
         return "person,date,time,foods\nClara,2024-01-15,08:00,Brot | Butter | Apfel\n"
     if kind == "illness":
-        return "subtype,person,date,time,temperature_c,medications,notes\nabdominal_pain,Clara,2024-01-15,18:00,,,Bauchschmerzen nach dem Essen\nfever,Clara,2024-01-16,08:00,38.5,,\nmedication,Clara,2024-01-16,09:00,,Ibuprofen | Paracetamol,\nother,Clara,2024-01-16,18:00,,,Allgemeines Unwohlsein\n"
+        return "subtype,person,date,time,temperature_c,regions,medications,symptoms,notes\nabdominal_pain,Clara,2024-01-15,18:00,,,,,Bauchschmerzen nach dem Essen\nfever,Clara,2024-01-16,08:00,38.5,,,,\nmedication,Clara,2024-01-16,09:00,,,Ibuprofen | Paracetamol,,\nsymptoms,Clara,2024-01-16,10:00,,,,Kopfschmerzen | Übelkeit,\nother,Clara,2024-01-16,18:00,,,,,Allgemeines Unwohlsein\n"
     return ""
 
 def _get_or_create_person(conn, name):

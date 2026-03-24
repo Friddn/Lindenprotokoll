@@ -526,6 +526,126 @@ def get_entry_details(entry_id):
             details.update(dict(row))
     return details
 
+def get_stats_data(person_id=None, period_days=90):
+    import datetime as dt
+    with connect() as conn:
+        params_base = []
+        where_person = ""
+        if person_id:
+            where_person = "AND e.person_id = ?"
+            params_base = [person_id]
+
+        date_filter = ""
+        if period_days:
+            date_filter = f"AND e.date >= date('now', '-{int(period_days)} day', 'localtime')"
+
+        # --- Abdominal pain days with regions ---
+        abdominal_rows = conn.execute(f"""
+            SELECT e.date, e.entry_id,
+                   GROUP_CONCAT(r.region ORDER BY r.region) AS regions
+            FROM entries e
+            LEFT JOIN illness_abdominal_regions r ON e.entry_id = r.entry_id
+            WHERE e.subtype = 'abdominal_pain' {where_person} {date_filter}
+            GROUP BY e.entry_id
+            ORDER BY e.date
+        """, params_base).fetchall()
+        abdominal_data = [dict(r) for r in abdominal_rows]
+
+        # --- Meals per day with food names ---
+        meal_rows = conn.execute(f"""
+            SELECT e.date, e.entry_id,
+                   GROUP_CONCAT(f.food_name, ', ') AS foods
+            FROM entries e
+            LEFT JOIN meal_food_links l ON e.entry_id = l.entry_id
+            LEFT JOIN food_items_master f ON l.food_id = f.food_id
+            WHERE e.subtype = 'meal' {where_person} {date_filter}
+            GROUP BY e.entry_id
+            ORDER BY e.date
+        """, params_base).fetchall()
+        meal_data = [dict(r) for r in meal_rows]
+
+        # --- Top foods on pain days and day before ---
+        ab_dates = list({r["date"] for r in abdominal_data})
+        top_suspect_foods = []
+        if ab_dates:
+            day_before_dates = [
+                (dt.date.fromisoformat(d) - dt.timedelta(days=1)).isoformat()
+                for d in ab_dates
+            ]
+            all_pain_dates = list(set(ab_dates + day_before_dates))
+            ph2 = ",".join("?" * len(all_pain_dates))
+            person_clause = "AND e.person_id = ?" if person_id else ""
+            person_arg = [person_id] if person_id else []
+            rows = conn.execute(f"""
+                SELECT f.food_name, COUNT(*) as cnt
+                FROM entries e
+                JOIN meal_food_links l ON e.entry_id = l.entry_id
+                JOIN food_items_master f ON l.food_id = f.food_id
+                WHERE e.subtype = 'meal' AND e.date IN ({ph2}) {person_clause}
+                GROUP BY f.food_name
+                ORDER BY cnt DESC
+                LIMIT 20
+            """, all_pain_dates + person_arg).fetchall()
+            top_suspect_foods = [dict(r) for r in rows]
+
+        # --- People list ---
+        people = conn.execute(
+            "SELECT person_id, display_name FROM people WHERE is_active=1 ORDER BY display_name COLLATE NOCASE"
+        ).fetchall()
+        people_data = [dict(r) for r in people]
+
+        # --- Electricity readings (all time, sorted asc for delta calculation) ---
+        elec_rows = conn.execute("""
+            SELECT e.date, e.entry_id,
+                   c.consumption_meter_kwh, c.feedin_meter_kwh, c.notes
+            FROM entries e
+            JOIN consumption_electricity c ON e.entry_id = c.entry_id
+            ORDER BY e.date ASC, e.entry_id ASC
+        """).fetchall()
+        electricity_data = [dict(r) for r in elec_rows]
+
+    return {
+        "abdominal": abdominal_data,
+        "meals": meal_data,
+        "top_suspect_foods": top_suspect_foods,
+        "people": people_data,
+        "electricity": electricity_data,
+    }
+
+def find_duplicates():
+    """Find entries with identical subtype, person_id, date and time."""
+    with connect() as conn:
+        rows = conn.execute("""
+            SELECT e.subtype, e.person_id, p.display_name AS person_name, e.date, e.time,
+                   COUNT(*) AS cnt,
+                   GROUP_CONCAT(e.entry_id ORDER BY e.entry_id) AS entry_ids
+            FROM entries e
+            LEFT JOIN people p ON e.person_id = p.person_id
+            GROUP BY e.subtype, e.person_id, e.date, e.time
+            HAVING COUNT(*) > 1
+            ORDER BY e.date DESC, e.time DESC
+        """).fetchall()
+
+    SUBTYPE_LABELS = {
+        'meal': 'Essen', 'abdominal_pain': 'Bauchschmerzen', 'fever': 'Fieber',
+        'medication': 'Medikamente', 'symptoms': 'Symptome', 'other': 'Anderes',
+        'electricity': 'Strom', 'water': 'Wasser', 'fuel': 'Auto',
+    }
+
+    result = []
+    for row in rows:
+        ids = [int(i) for i in row['entry_ids'].split(',')]
+        result.append({
+            'subtype': row['subtype'],
+            'subtype_label': SUBTYPE_LABELS.get(row['subtype'], row['subtype']),
+            'person_name': row['person_name'] or '—',
+            'date': row['date'],
+            'time': row['time'],
+            'count': row['cnt'],
+            'entry_ids': ids,
+        })
+    return result
+
 def delete_entry(entry_id):
     with connect() as conn:
         conn.execute("DELETE FROM entries WHERE entry_id=?", (entry_id,))

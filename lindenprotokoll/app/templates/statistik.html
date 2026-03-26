@@ -2,58 +2,59 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 <style>
-.filter-row { display:flex; gap:.75rem; flex-wrap:wrap; align-items:flex-end; margin-bottom:1.25rem; }
-.filter-row > div { display:flex; flex-direction:column; gap:.25rem; }
-.filter-row label { font-size:.8rem; color:#666; }
-.filter-row select, .filter-row input[type=checkbox] { padding:.3rem .5rem; border:1px solid #ccc; border-radius:6px; font-size:.9rem; }
-.filter-row .checkbox-wrap { display:flex; flex-direction:row; align-items:center; gap:.4rem; padding-top:1.2rem; font-size:.9rem; }
-.filter-row button { padding:.35rem .9rem; border-radius:6px; border:none; background:var(--color-primary,#3b82f6); color:#fff; cursor:pointer; font-size:.9rem; align-self:flex-end; }
-canvas { max-height:300px; }
-.section-title { font-size:1rem; font-weight:600; margin:1rem 0 .6rem; }
-.pain-day-list table { width:100%; border-collapse:collapse; }
-.pain-day-list td, .pain-day-list th { padding:.4rem .6rem; border-bottom:1px solid #eee; text-align:left; vertical-align:top; }
-.pain-day-list th { font-weight:600; color:#555; font-size:.8rem; }
-.food-badge { display:inline-block; padding:.1rem .45rem; border-radius:10px; font-size:.78rem; background:#dbeafe; color:#1d4ed8; margin:.1rem; }
-.suspect-bar { display:flex; align-items:center; gap:.5rem; margin:.25rem 0; font-size:.85rem; }
-.suspect-bar-fill { height:14px; border-radius:4px; background:#f97316; min-width:4px; }
-.muted { color:#888; font-size:.9rem; }
-.tab-bar { display:flex; gap:.5rem; margin-bottom:1.25rem; flex-wrap:wrap; }
-.tab-btn { padding:.4rem 1rem; border:1px solid #ccc; border-radius:20px; background:#f4f4f4; cursor:pointer; font-size:.9rem; }
-.tab-btn.active { background:var(--color-primary,#3b82f6); color:#fff; border-color:var(--color-primary,#3b82f6); }
-.tab-panel { display:none; }
-.tab-panel.active { display:block; }
-.elec-summary { display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1rem; }
-.elec-card { flex:1; min-width:120px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:.75rem 1rem; }
-.elec-card .val { font-size:1.3rem; font-weight:700; }
-.elec-card .lbl { font-size:.78rem; color:#666; margin-top:.2rem; }
-.elec-card.verbrauch .val { color:#ef4444; }
-.elec-card.einspeisung .val { color:#10b981; }
+.filter-row{display:flex;gap:.6rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:1rem;}
+.filter-row>div{display:flex;flex-direction:column;gap:.2rem;}
+.filter-row label{font-size:.78rem;color:#666;}
+.filter-row select,.filter-row input[type=date]{padding:.28rem .45rem;border:1px solid #ccc;border-radius:6px;font-size:.88rem;}
+.filter-row .checkbox-wrap{display:flex;flex-direction:row;align-items:center;gap:.4rem;padding-top:1.1rem;font-size:.88rem;}
+.filter-row button{padding:.3rem .85rem;border-radius:6px;border:none;background:var(--color-primary,#3b82f6);color:#fff;cursor:pointer;font-size:.88rem;align-self:flex-end;}
+canvas{max-height:260px;}
+.section-title{font-size:.97rem;font-weight:600;margin:1rem 0 .5rem;}
+.pain-day-list table{width:100%;border-collapse:collapse;}
+.pain-day-list td,.pain-day-list th{padding:.35rem .55rem;border-bottom:1px solid #eee;text-align:left;vertical-align:top;}
+.pain-day-list th{font-weight:600;color:#555;font-size:.78rem;}
+.food-badge{display:inline-block;padding:.1rem .4rem;border-radius:10px;font-size:.76rem;background:#dbeafe;color:#1d4ed8;margin:.1rem;}
+.suspect-bar{display:flex;align-items:center;gap:.5rem;margin:.2rem 0;font-size:.84rem;}
+.suspect-bar-fill{height:13px;border-radius:4px;background:#f97316;min-width:4px;}
+.muted{color:#888;font-size:.88rem;}
+.tab-bar{display:flex;gap:.4rem;margin-bottom:1.1rem;flex-wrap:wrap;}
+.tab-btn{padding:.35rem .9rem;border:1px solid #ccc;border-radius:20px;background:#f4f4f4;cursor:pointer;font-size:.88rem;}
+.tab-btn.active{background:var(--color-primary,#3b82f6);color:#fff;border-color:var(--color-primary,#3b82f6);}
+.tab-panel{display:none;}
+.tab-panel.active{display:block;}
+.kpi-row{display:flex;gap:.7rem;flex-wrap:wrap;margin-bottom:.9rem;}
+.kpi{flex:1;min-width:100px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:.6rem .8rem;}
+.kpi .val{font-size:1.2rem;font-weight:700;}
+.kpi .lbl{font-size:.73rem;color:#666;margin-top:.15rem;}
+.kpi.red .val{color:#ef4444;}.kpi.green .val{color:#10b981;}.kpi.blue .val{color:#3b82f6;}.kpi.orange .val{color:#f97316;}
+.chart-wrap{position:relative;width:100%;margin-bottom:1.2rem;}
+table.data-table{width:100%;border-collapse:collapse;font-size:.82rem;}
+table.data-table td,table.data-table th{padding:.32rem .55rem;border-bottom:1px solid #eee;text-align:right;}
+table.data-table th{font-weight:600;color:#555;text-align:left;}
+table.data-table td:first-child{text-align:left;}
 </style>
 
 <div class="card">
   <h2>Statistik</h2>
-
-  <div class="tab-bar">
-    <button class="tab-btn active" onclick="switchTab('illness',this)">🤒 Bauchschmerzen &amp; Essen</button>
-    <button class="tab-btn" onclick="switchTab('strom',this)">⚡ Strom</button>
+  <div class="tab-bar" id="main-tabs">
+    <button class="tab-btn" data-tab="illness" onclick="switchTab('illness',this)">🤒 Bauchschmerzen</button>
+    <button class="tab-btn" data-tab="strom"   onclick="switchTab('strom',this)">⚡ Strom</button>
+    <button class="tab-btn" data-tab="wasser"  onclick="switchTab('wasser',this)">💧 Wasser</button>
+    <button class="tab-btn" data-tab="fuel"    onclick="switchTab('fuel',this)">🚗 Kraftstoff</button>
   </div>
 
-  <!-- ===== TAB: ILLNESS / MEAL ===== -->
-  <div id="tab-illness" class="tab-panel active">
-    <form method="get" class="filter-row">
+  <!-- ===== ILLNESS ===== -->
+  <div id="tab-illness" class="tab-panel">
+    <form method="get" class="filter-row" id="illness-form">
       <input type="hidden" name="tab" value="illness">
-      <div>
-        <label>Person</label>
-        <select name="person_id">
+      <div><label>Person</label>
+        <select name="person_id" onchange="saveState()">
           <option value="">Alle</option>
-          {% for p in people %}
-          <option value="{{ p.person_id }}" {% if selected_person_id == p.person_id %}selected{% endif %}>{{ p.display_name }}</option>
-          {% endfor %}
+          {% for p in people %}<option value="{{ p.person_id }}" {% if selected_person_id==p.person_id %}selected{% endif %}>{{ p.display_name }}</option>{% endfor %}
         </select>
       </div>
-      <div>
-        <label>Zeitraum</label>
-        <select name="period">
+      <div><label>Zeitraum</label>
+        <select name="period" onchange="saveState()">
           <option value="30"  {% if selected_period==30  %}selected{% endif %}>30 Tage</option>
           <option value="90"  {% if selected_period==90  %}selected{% endif %}>90 Tage</option>
           <option value="180" {% if selected_period==180 %}selected{% endif %}>6 Monate</option>
@@ -62,396 +63,520 @@ canvas { max-height:300px; }
         </select>
       </div>
       <div class="checkbox-wrap">
-        <input type="checkbox" id="show-pain-free" name="show_pain_free" value="1" {% if show_pain_free %}checked{% endif %}>
-        <label for="show-pain-free" style="padding-top:0;color:#333;">Schmerzfreie Tage einblenden</label>
+        <input type="checkbox" id="show-pain-free" name="show_pain_free" value="1" {% if show_pain_free %}checked{% endif %} onchange="saveState()">
+        <label for="show-pain-free" style="padding-top:0;color:#333;">Schmerzfreie Tage</label>
       </div>
       <button type="submit">Anzeigen</button>
     </form>
-
     <p class="section-title">Zeitverlauf: Mahlzeiten &amp; Bauchschmerzen</p>
-    <p class="muted" style="font-size:.8rem;margin-top:-.4rem;margin-bottom:.75rem;">
-      Balken = Mahlzeiten pro Tag &nbsp;|&nbsp;
-      <span style="color:#ef4444">■</span> Schmerztag &nbsp;
-      {% if show_pain_free %}<span style="color:#86efac">■</span> Schmerzfreier Tag{% endif %}
-    </p>
-    <div style="position:relative;width:100%;margin-bottom:1.5rem;"><canvas id="chartTimeline"></canvas></div>
-
+    <p class="muted" style="font-size:.78rem;margin-top:-.3rem;margin-bottom:.6rem;">Balken = Mahlzeiten/Tag &nbsp;|&nbsp; <span style="color:#ef4444">■</span> Schmerztag{% if show_pain_free %} &nbsp;<span style="color:#86efac">■</span> Schmerzfrei{% endif %}</p>
+    <div class="chart-wrap"><canvas id="chartTimeline"></canvas></div>
     <p class="section-title">Häufigste Lebensmittel an Schmerztagen (und Vortag)</p>
     <div id="suspect-bars"></div>
     <p id="suspect-empty" class="muted" style="display:none">Keine Bauchschmerz-Tage im Zeitraum.</p>
-
-    <p class="section-title" style="margin-top:1.25rem;">Schmerztage im Detail</p>
+    <p class="section-title" style="margin-top:1rem;">Schmerztage im Detail</p>
     <div class="pain-day-list">
-      <table id="pain-table">
-        <thead><tr><th>Datum</th><th>Gegessen (selber Tag)</th><th>Gegessen (Vortag)</th></tr></thead>
-        <tbody id="pain-table-body"></tbody>
-      </table>
-      <p id="pain-table-empty" class="muted" style="display:none">Keine Bauchschmerz-Tage im Zeitraum.</p>
+      <table id="pain-table"><thead><tr><th>Datum</th><th>Gegessen (selber Tag)</th><th>Gegessen (Vortag)</th></tr></thead><tbody id="pain-table-body"></tbody></table>
+      <p id="pain-table-empty" class="muted" style="display:none">Keine Schmerztage.</p>
     </div>
   </div>
 
-  <!-- ===== TAB: STROM ===== -->
+  <!-- ===== STROM ===== -->
   <div id="tab-strom" class="tab-panel">
-    <div class="filter-row" style="margin-bottom:1rem;">
-      <div>
-        <label>Zeitraum</label>
-        <select id="elec-period" onchange="renderElec()">
-          <option value="90">90 Tage</option>
-          <option value="180">6 Monate</option>
-          <option value="365" selected>1 Jahr</option>
-          <option value="730">2 Jahre</option>
-          <option value="0">Alle</option>
+    <div class="filter-row" id="strom-filters">
+      <div><label>Zeitraum</label>
+        <select id="elec-period" onchange="applyElecFilter();saveState()">
+          <option value="90">90 Tage</option><option value="180">6 Monate</option>
+          <option value="365" selected>1 Jahr</option><option value="730">2 Jahre</option><option value="0">Alle</option><option value="custom">Eigener…</option>
         </select>
       </div>
-      <div>
-        <label>Ansicht Graph 1</label>
-        <select id="elec-mode" onchange="renderElec()">
-          <option value="avg_per_day">Ø Verbrauch pro Tag (je Intervall)</option>
-          <option value="delta">Verbrauch je Intervall (Gesamt-Δ)</option>
-          <option value="meter">Zählerstand (absolut)</option>
+      <div id="elec-custom-from-wrap" style="display:none"><label>Von</label><input type="date" id="elec-from" onchange="applyElecFilter();saveState()"></div>
+      <div id="elec-custom-to-wrap"   style="display:none"><label>Bis</label><input type="date" id="elec-to"   onchange="applyElecFilter();saveState()"></div>
+      <div><label>Ansicht</label>
+        <select id="elec-mode" onchange="renderElec();saveState()">
+          <option value="avg_per_day">Ø/Tag</option>
+          <option value="delta">Δ pro Intervall</option>
+          <option value="meter">Zählerstand</option>
         </select>
       </div>
     </div>
-
-    <div class="elec-summary" id="elec-summary"></div>
-
-    <!-- Graph 1: configurable -->
+    <div class="kpi-row" id="elec-kpi"></div>
     <p class="section-title" id="elec-chart1-title">Ø Verbrauch &amp; Einspeisung pro Tag</p>
-    <div style="position:relative;width:100%;margin-bottom:1.5rem;"><canvas id="chartElec"></canvas></div>
-
-    <!-- Graph 2: always avg per day over time -->
-    <p class="section-title">Ø Verbrauch pro Tag – Verlauf über Zeit</p>
-    <p class="muted" style="font-size:.8rem;margin-top:-.4rem;margin-bottom:.75rem;">Jeder Punkt = Tagesdurchschnitt des Intervalls zwischen zwei Ablesungen</p>
-    <div style="position:relative;width:100%;margin-bottom:1.5rem;"><canvas id="chartElecAvg"></canvas></div>
-
-    <p class="section-title">Alle Ablesungen</p>
-    <div style="overflow-x:auto;">
-      <table id="elec-table" style="width:100%;border-collapse:collapse;font-size:.85rem;">
-        <thead>
-          <tr style="border-bottom:2px solid #eee;">
-            <th style="padding:.4rem .6rem;text-align:left">Datum</th>
-            <th style="padding:.4rem .6rem;text-align:right">Zähler Verbr. (kWh)</th>
-            <th style="padding:.4rem .6rem;text-align:right">Δ Verbr.</th>
-            <th style="padding:.4rem .6rem;text-align:right">Tage</th>
-            <th style="padding:.4rem .6rem;text-align:right">Ø/Tag Verbr.</th>
-            <th style="padding:.4rem .6rem;text-align:right">Zähler Einsp. (kWh)</th>
-            <th style="padding:.4rem .6rem;text-align:right">Δ Einsp.</th>
-            <th style="padding:.4rem .6rem;text-align:right">Ø/Tag Einsp.</th>
-            <th style="padding:.4rem .6rem;text-align:left">Notiz</th>
-          </tr>
-        </thead>
+    <div class="chart-wrap"><canvas id="chartElec"></canvas></div>
+    <p class="section-title">Ø Verbrauch pro Tag – Verlauf</p>
+    <p class="muted" style="font-size:.78rem;margin-top:-.3rem;margin-bottom:.6rem;">Jeder Punkt = Ø des Intervalls zwischen zwei Ablesungen</p>
+    <div class="chart-wrap"><canvas id="chartElecAvg"></canvas></div>
+    <p class="section-title">Ablesungen</p>
+    <div style="overflow-x:auto">
+      <table class="data-table" id="elec-table">
+        <thead><tr><th>Datum</th><th>Verbr. (kWh)</th><th>Δ Verbr.</th><th>Tage</th><th>Ø/Tag Verbr.</th><th>Einsp. (kWh)</th><th>Δ Einsp.</th><th>Ø/Tag Einsp.</th><th style="text-align:left">Notiz</th></tr></thead>
         <tbody id="elec-table-body"></tbody>
       </table>
-      <p id="elec-empty" class="muted" style="display:none">Keine Stromdaten vorhanden.</p>
+      <p id="elec-empty" class="muted" style="display:none">Keine Stromdaten.</p>
     </div>
+  </div>
+
+  <!-- ===== WASSER ===== -->
+  <div id="tab-wasser" class="tab-panel">
+    <div class="filter-row" id="water-filters">
+      <div><label>Zeitraum</label>
+        <select id="water-period" onchange="applyWaterFilter();saveState()">
+          <option value="90">90 Tage</option><option value="180">6 Monate</option>
+          <option value="365" selected>1 Jahr</option><option value="730">2 Jahre</option><option value="0">Alle</option><option value="custom">Eigener…</option>
+        </select>
+      </div>
+      <div id="water-custom-from-wrap" style="display:none"><label>Von</label><input type="date" id="water-from" onchange="applyWaterFilter();saveState()"></div>
+      <div id="water-custom-to-wrap"   style="display:none"><label>Bis</label><input type="date" id="water-to"   onchange="applyWaterFilter();saveState()"></div>
+    </div>
+    <div class="kpi-row" id="water-kpi"></div>
+    <p class="section-title">Ø Verbrauch pro Tag – Verlauf</p>
+    <div class="chart-wrap"><canvas id="chartWaterAvg"></canvas></div>
+    <p class="section-title">Zählerstand – Verlauf</p>
+    <div class="chart-wrap"><canvas id="chartWaterMeter"></canvas></div>
+    <p class="section-title">Ablesungen</p>
+    <div style="overflow-x:auto">
+      <table class="data-table" id="water-table">
+        <thead><tr><th>Datum</th><th>Zähler (m³)</th><th>Δ (m³)</th><th>Tage</th><th>Ø/Tag (m³)</th><th style="text-align:left">Notiz</th></tr></thead>
+        <tbody id="water-table-body"></tbody>
+      </table>
+      <p id="water-empty" class="muted" style="display:none">Keine Wasserdaten.</p>
+    </div>
+  </div>
+
+  <!-- ===== KRAFTSTOFF ===== -->
+  <div id="tab-fuel" class="tab-panel">
+    <div class="filter-row" id="fuel-filters">
+      <div><label>Zeitraum</label>
+        <select id="fuel-period" onchange="applyFuelFilter();saveState()">
+          <option value="180">6 Monate</option><option value="365" selected>1 Jahr</option>
+          <option value="730">2 Jahre</option><option value="0">Alle</option><option value="custom">Eigener…</option>
+        </select>
+      </div>
+      <div id="fuel-custom-from-wrap" style="display:none"><label>Von</label><input type="date" id="fuel-from" onchange="applyFuelFilter();saveState()"></div>
+      <div id="fuel-custom-to-wrap"   style="display:none"><label>Bis</label><input type="date" id="fuel-to"   onchange="applyFuelFilter();saveState()"></div>
+    </div>
+    <div class="kpi-row" id="fuel-kpi"></div>
+    <div id="fuel-charts-wrap"></div>
   </div>
 </div>
 
 <script>
 const RAW = {{ stats_json | safe }};
 const SHOW_PAIN_FREE = {{ 'true' if show_pain_free else 'false' }};
+const LS_KEY = 'lindenprotokoll_stats_state';
 
-// ===================== TAB SWITCHING =====================
+// ==================== STATE PERSISTENCE ====================
+function saveState() {
+  const state = {
+    tab: currentTab,
+    elecPeriod: document.getElementById('elec-period').value,
+    elecMode:   document.getElementById('elec-mode').value,
+    elecFrom:   document.getElementById('elec-from')?.value||'',
+    elecTo:     document.getElementById('elec-to')?.value||'',
+    waterPeriod:document.getElementById('water-period').value,
+    waterFrom:  document.getElementById('water-from')?.value||'',
+    waterTo:    document.getElementById('water-to')?.value||'',
+    fuelPeriod: document.getElementById('fuel-period').value,
+    fuelFrom:   document.getElementById('fuel-from')?.value||'',
+    fuelTo:     document.getElementById('fuel-to')?.value||'',
+  };
+  try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch(e){}
+}
+function loadState() {
+  try { return JSON.parse(localStorage.getItem(LS_KEY)||'{}'); } catch(e){ return {}; }
+}
+
+// ==================== TAB SWITCHING ====================
+let currentTab = 'illness';
+const charts = {};
+function destroyChart(id) { if(charts[id]){charts[id].destroy();delete charts[id];} }
+
 function switchTab(name, btn) {
-  document.querySelectorAll('.tab-panel').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-  document.getElementById('tab-' + name).classList.add('active');
-  btn.classList.add('active');
-  if (name === 'strom') renderElec();
+  document.querySelectorAll('.tab-panel').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el=>el.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  if(btn) btn.classList.add('active');
+  else document.querySelector(`[data-tab="${name}"]`)?.classList.add('active');
+  currentTab = name;
+  saveState();
+  if(name==='strom')  renderElec();
+  if(name==='wasser') renderWater();
+  if(name==='fuel')   renderFuel();
 }
 
-// ===================== ILLNESS / MEAL TAB =====================
-const mealsByDate = {};
-for (const m of RAW.meals) {
-  if (!mealsByDate[m.date]) mealsByDate[m.date] = [];
-  if (m.foods) for (const f of m.foods.split(', ')) if (f) mealsByDate[m.date].push(f);
-}
-const mealCountByDate = {};
-for (const m of RAW.meals) mealCountByDate[m.date] = (mealCountByDate[m.date]||0) + 1;
-const hasPainOn = {};
-for (const a of RAW.abdominal) hasPainOn[a.date] = true;
+// ==================== SHARED HELPERS ====================
+function daysAgo(n){const d=new Date();d.setDate(d.getDate()-n);return d.toISOString().slice(0,10);}
 
-// All dates: always include pain + meal dates; optionally all dates in range
-let allDates = [...new Set([
-  ...RAW.meals.map(m => m.date),
-  ...RAW.abdominal.map(a => a.date)
-])].sort();
-
-if (SHOW_PAIN_FREE && allDates.length >= 2) {
-  // fill every day between first and last date
-  const filled = [];
-  let cur = new Date(allDates[0] + 'T12:00:00');
-  const last = new Date(allDates[allDates.length-1] + 'T12:00:00');
-  while (cur <= last) {
-    filled.push(cur.toISOString().slice(0,10));
-    cur.setDate(cur.getDate() + 1);
-  }
-  allDates = filled;
-}
-
-// Build datasets
-const painData     = allDates.map(d => hasPainOn[d] ? 0.8 : 0);
-const painFreeDat  = allDates.map(d => (!hasPainOn[d] && (mealCountByDate[d]||0) > 0) ? 0.4 : 0);
-const mealData     = allDates.map(d => mealCountByDate[d] || 0);
-
-const datasets = [
-  { type:'bar', label:'Mahlzeiten', data: mealData,
-    backgroundColor:'#93c5fd', yAxisID:'yMeal', order:3 },
-  { type:'bar', label:'Bauchschmerzen', data: painData,
-    backgroundColor:'#ef444488', borderColor:'#ef4444', borderWidth:1,
-    yAxisID:'yPain', order:1 }
-];
-if (SHOW_PAIN_FREE) {
-  datasets.push({
-    type:'bar', label:'Schmerzfrei (mit Essen)', data: painFreeDat,
-    backgroundColor:'#86efac88', borderColor:'#22c55e', borderWidth:1,
-    yAxisID:'yPain', order:2
+function setupCustomDateToggle(selectId, fromWrapId, toWrapId, callback) {
+  const sel = document.getElementById(selectId);
+  sel.addEventListener('change', () => {
+    const custom = sel.value==='custom';
+    document.getElementById(fromWrapId).style.display = custom?'':'none';
+    document.getElementById(toWrapId).style.display   = custom?'':'none';
+    callback();
   });
 }
 
-new Chart(document.getElementById('chartTimeline').getContext('2d'), {
-  data: { labels: allDates, datasets },
-  options: {
-    interaction:{ mode:'index', intersect:false },
-    scales: {
-      x:{ ticks:{ maxTicksLimit:18, maxRotation:45 } },
-      yMeal:{ position:'left', title:{display:true,text:'Mahlzeiten'}, ticks:{precision:0,stepSize:1} },
-      yPain:{ position:'right', min:0, max:1, ticks:{display:false}, grid:{display:false} }
-    },
-    plugins:{
-      legend:{display:true},
-      tooltip:{callbacks:{afterBody(items){
-        const date=items[0]?.label, foods=mealsByDate[date];
-        if(foods&&foods.length) return ['','Gegessen:',...foods.slice(0,8).map(f=>'  • '+f)];
-        return [];
-      }}}
-    }
+function filterByPeriodAndCustom(data, dateKey, period, fromVal, toVal) {
+  let result = data;
+  if(period==='custom') {
+    if(fromVal) result = result.filter(r=>r[dateKey]>=fromVal);
+    if(toVal)   result = result.filter(r=>r[dateKey]<=toVal);
+  } else if(period && period!=='0') {
+    const cutoff = daysAgo(parseInt(period));
+    result = result.filter(r=>r[dateKey]>=cutoff);
   }
+  return result;
+}
+
+// For delta calc: include one entry before cutoff so first interval has a previous value
+function filterWithOneBefore(allData, dateKey, period, fromVal, toVal) {
+  const filtered = filterByPeriodAndCustom(allData, dateKey, period, fromVal, toVal);
+  if(!filtered.length) return filtered;
+  const firstDate = filtered[0][dateKey];
+  const idx = allData.findIndex(r=>r[dateKey]===firstDate);
+  return idx>0 ? [allData[idx-1], ...filtered] : filtered;
+}
+
+function computeDeltas(data, dateKey, valueKey) {
+  return data.map((r,i)=>{
+    if(i===0) return {...r, delta:null, days:null, avgPerDay:null};
+    const prev=data[i-1];
+    const d1=new Date(prev[dateKey]+'T12:00:00'), d2=new Date(r[dateKey]+'T12:00:00');
+    const days=Math.round((d2-d1)/86400000);
+    const val=r[valueKey], prevVal=prev[valueKey];
+    const delta=(val!=null&&prevVal!=null)?val-prevVal:null;
+    const avg=(delta!=null&&delta>=0&&days>0)?Math.round(delta/days*1000)/1000:null;
+    return {...r, delta, days, avgPerDay:avg};
+  });
+}
+
+function makeTimeChart(canvasId, datasets, yLabel, tooltipSuffix='') {
+  destroyChart(canvasId);
+  charts[canvasId] = new Chart(document.getElementById(canvasId).getContext('2d'),{
+    data:{datasets},
+    options:{
+      interaction:{mode:'index',intersect:false},
+      scales:{
+        x:{type:'time',time:{tooltipFormat:'yyyy-MM-dd',displayFormats:{day:'dd.MM',month:'MMM yy',year:'yyyy'}},
+           ticks:{maxTicksLimit:14,maxRotation:40}},
+        y:{title:{display:true,text:yLabel},ticks:{precision:3}}
+      },
+      plugins:{legend:{display:datasets.length>1},
+        tooltip:{callbacks:{afterLabel(ctx){
+          const r=ctx.dataset._rows?.[ctx.dataIndex];
+          if(r?.days) return `  (über ${r.days} Tag${r.days!==1?'e':''})`;
+          return '';
+        }}}}
+    }
+  });
+}
+
+const VEHICLE_COLORS=['#3b82f6','#f59e0b','#10b981','#ef4444','#8b5cf6','#ec4899'];
+
+// ==================== ILLNESS TAB ====================
+(function(){
+  const mealsByDate={};
+  for(const m of RAW.meals){
+    if(!mealsByDate[m.date])mealsByDate[m.date]=[];
+    if(m.foods)for(const f of m.foods.split(', '))if(f)mealsByDate[m.date].push(f);
+  }
+  const mealCnt={};
+  for(const m of RAW.meals)mealCnt[m.date]=(mealCnt[m.date]||0)+1;
+  const painOn={};for(const a of RAW.abdominal)painOn[a.date]=true;
+  let dates=[...new Set([...RAW.meals.map(m=>m.date),...RAW.abdominal.map(a=>a.date)])].sort();
+  if(SHOW_PAIN_FREE&&dates.length>=2){
+    const filled=[];let cur=new Date(dates[0]+'T12:00:00');const last=new Date(dates[dates.length-1]+'T12:00:00');
+    while(cur<=last){filled.push(cur.toISOString().slice(0,10));cur.setDate(cur.getDate()+1);}
+    dates=filled;
+  }
+  const ds=[
+    {type:'bar',label:'Mahlzeiten',data:dates.map(d=>mealCnt[d]||0),backgroundColor:'#93c5fd',yAxisID:'yMeal',order:3},
+    {type:'bar',label:'Bauchschmerzen',data:dates.map(d=>painOn[d]?.8:0),backgroundColor:'#ef444488',borderColor:'#ef4444',borderWidth:1,yAxisID:'yPain',order:1}
+  ];
+  if(SHOW_PAIN_FREE)ds.push({type:'bar',label:'Schmerzfrei',data:dates.map(d=>(!painOn[d]&&(mealCnt[d]||0)>0)?.4:0),backgroundColor:'#86efac88',borderColor:'#22c55e',borderWidth:1,yAxisID:'yPain',order:2});
+  charts['chartTimeline']=new Chart(document.getElementById('chartTimeline').getContext('2d'),{
+    data:{labels:dates,datasets:ds},
+    options:{interaction:{mode:'index',intersect:false},
+      scales:{x:{ticks:{maxTicksLimit:18,maxRotation:45}},
+        yMeal:{position:'left',title:{display:true,text:'Mahlzeiten'},ticks:{precision:0,stepSize:1}},
+        yPain:{position:'right',min:0,max:1,ticks:{display:false},grid:{display:false}}},
+      plugins:{legend:{display:true},tooltip:{callbacks:{afterBody(items){
+        const d=items[0]?.label,f=mealsByDate[d];
+        if(f&&f.length)return['','Gegessen:',...f.slice(0,8).map(x=>'  • '+x)];return[];
+      }}}}}
+  });
+  const sb=document.getElementById('suspect-bars');
+  if(!RAW.top_suspect_foods.length){document.getElementById('suspect-empty').style.display='';}
+  else{const max=RAW.top_suspect_foods[0].cnt;for(const it of RAW.top_suspect_foods){const pct=Math.max(Math.round(it.cnt/max*100),3);const d=document.createElement('div');d.className='suspect-bar';d.innerHTML=`<span style="width:140px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis"title="${it.food_name}">${it.food_name}</span><div class="suspect-bar-fill"style="width:${pct}%"></div><span style="color:#666">${it.cnt}×</span>`;sb.appendChild(d);}}
+  function prevDate(d){const dt=new Date(d+'T12:00:00');dt.setDate(dt.getDate()-1);return dt.toISOString().slice(0,10);}
+  const painDays=[...new Set(RAW.abdominal.map(a=>a.date))].sort().reverse();
+  if(!painDays.length){document.getElementById('pain-table-empty').style.display='';document.getElementById('pain-table').style.display='none';}
+  else{const tb=document.getElementById('pain-table-body');const badge=f=>`<span class="food-badge">${f}</span>`;
+    for(const date of painDays){const f=mealsByDate[date]||[],p=mealsByDate[prevDate(date)]||[];const tr=document.createElement('tr');tr.innerHTML=`<td><strong>${date}</strong></td><td>${f.length?f.map(badge).join(' '):'<span class="muted">—</span>'}</td><td>${p.length?p.map(badge).join(' '):'<span class="muted">—</span>'}</td>`;tb.appendChild(tr);}}
+})();
+
+// ==================== STROM TAB ====================
+const ALL_ELEC = computeDeltas(RAW.electricity,'date','consumption_meter_kwh').map((r,i)=>{
+  const prev=RAW.electricity[i-1];
+  const dF=(i>0&&r.feedin_meter_kwh!=null&&prev?.feedin_meter_kwh!=null)?r.feedin_meter_kwh-prev.feedin_meter_kwh:null;
+  const days=r.days;
+  const avgF=(dF!=null&&dF>=0&&days>0)?Math.round(dF/days*1000)/1000:null;
+  return {...r,deltaF:dF,avgF};
 });
 
-// Suspect foods
-const suspectBars = document.getElementById('suspect-bars');
-if (!RAW.top_suspect_foods.length) {
-  document.getElementById('suspect-empty').style.display='';
-} else {
-  const max = RAW.top_suspect_foods[0].cnt;
-  for (const item of RAW.top_suspect_foods) {
-    const pct = Math.max(Math.round(item.cnt/max*100),3);
-    const d = document.createElement('div');
-    d.className='suspect-bar';
-    d.innerHTML=`<span style="width:150px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis" title="${item.food_name}">${item.food_name}</span>`+
-      `<div class="suspect-bar-fill" style="width:${pct}%"></div>`+
-      `<span style="color:#666">${item.cnt}&times;</span>`;
-    suspectBars.appendChild(d);
+let elecFiltered=ALL_ELEC;
+function applyElecFilter(){
+  const period=document.getElementById('elec-period').value;
+  const from=document.getElementById('elec-from').value;
+  const to=document.getElementById('elec-to').value;
+  const custom=period==='custom';
+  document.getElementById('elec-custom-from-wrap').style.display=custom?'':'none';
+  document.getElementById('elec-custom-to-wrap').style.display=custom?'':'none';
+  elecFiltered=filterWithOneBefore(ALL_ELEC,'date',period,from,to);
+  renderElec();
+}
+
+function renderElec(){
+  const mode=document.getElementById('elec-mode').value;
+  const data=elecFiltered;
+  destroyChart('chartElec');destroyChart('chartElecAvg');
+  document.getElementById('elec-table-body').innerHTML='';
+  const emptyEl=document.getElementById('elec-empty');
+  if(!data.length){emptyEl.style.display='';document.getElementById('elec-table').style.display='none';document.getElementById('elec-kpi').innerHTML='';return;}
+  emptyEl.style.display='none';document.getElementById('elec-table').style.display='';
+  const validC=data.filter(r=>r.delta!=null&&r.delta>=0);
+  const validF=data.filter(r=>r.deltaF!=null&&r.deltaF>=0);
+  const sumC=validC.reduce((a,r)=>a+r.delta,0);
+  const sumF=validF.reduce((a,r)=>a+r.deltaF,0);
+  const totalDays=validC.reduce((a,r)=>a+(r.days||0),0);
+  const avgC=totalDays>0?(sumC/totalDays).toFixed(2):'—';
+  const avgF=totalDays>0?(sumF/totalDays).toFixed(2):'—';
+  document.getElementById('elec-kpi').innerHTML=
+    `<div class="kpi red"><div class="val">${sumC.toLocaleString('de-DE')} kWh</div><div class="lbl">Verbrauch gesamt</div></div>`+
+    `<div class="kpi red"><div class="val">${avgC} kWh</div><div class="lbl">Ø/Tag Verbrauch</div></div>`+
+    `<div class="kpi green"><div class="val">${sumF.toLocaleString('de-DE')} kWh</div><div class="lbl">Einspeisung gesamt</div></div>`+
+    `<div class="kpi green"><div class="val">${avgF} kWh</div><div class="lbl">Ø/Tag Einspeisung</div></div>`+
+    `<div class="kpi"><div class="val">${data.length}</div><div class="lbl">Ablesungen</div></div>`;
+  const titles={avg_per_day:'Ø Verbrauch & Einspeisung pro Tag',delta:'Verbrauch je Intervall (Δ)',meter:'Zählerstand'};
+  document.getElementById('elec-chart1-title').textContent=titles[mode];
+  let dsC,dsF;
+  const makeRows=(key)=>data.map(r=>({x:r.date,y:r[key]}));
+  if(mode==='avg_per_day'){
+    dsC={label:'Ø Verbr./Tag',data:data.map(r=>({x:r.date,y:r.delta!=null&&r.delta>=0?r.avgPerDay:null})),_rows:data,backgroundColor:'#fca5a5',borderColor:'#ef4444',borderWidth:1,type:'bar'};
+    dsF={label:'Ø Einsp./Tag',data:data.map(r=>({x:r.date,y:r.deltaF!=null&&r.deltaF>=0?r.avgF:null})),_rows:data,backgroundColor:'#6ee7b7',borderColor:'#10b981',borderWidth:1,type:'bar'};
+  }else if(mode==='delta'){
+    dsC={label:'Δ Verbr.',data:data.map(r=>({x:r.date,y:r.delta!=null&&r.delta>=0?r.delta:null})),_rows:data,backgroundColor:'#fca5a5',borderColor:'#ef4444',borderWidth:1,type:'bar'};
+    dsF={label:'Δ Einsp.',data:data.map(r=>({x:r.date,y:r.deltaF!=null&&r.deltaF>=0?r.deltaF:null})),_rows:data,backgroundColor:'#6ee7b7',borderColor:'#10b981',borderWidth:1,type:'bar'};
+  }else{
+    dsC={label:'Zähler Verbr.',data:data.map(r=>({x:r.date,y:r.consumption_meter_kwh})),borderColor:'#ef4444',backgroundColor:'#fca5a544',tension:0.3,fill:false,type:'line',pointRadius:4};
+    dsF={label:'Zähler Einsp.',data:data.map(r=>({x:r.date,y:r.feedin_meter_kwh})),borderColor:'#10b981',backgroundColor:'#6ee7b744',tension:0.3,fill:false,type:'line',pointRadius:4};
   }
+  makeTimeChart('chartElec',[dsC,dsF],mode==='meter'?'kWh (Zähler)':mode==='delta'?'kWh (Δ)':'kWh/Tag (Ø)');
+  const avgRows=data.filter(r=>r.avgPerDay!=null&&r.delta>=0);
+  const avgFRows=data.filter(r=>r.avgF!=null&&r.deltaF>=0);
+  makeTimeChart('chartElecAvg',[
+    {label:'Ø Verbr./Tag',data:avgRows.map(r=>({x:r.date,y:r.avgPerDay})),_rows:avgRows,borderColor:'#ef4444',backgroundColor:'#fca5a544',tension:0.4,fill:true,pointRadius:5,type:'line'},
+    {label:'Ø Einsp./Tag',data:avgFRows.map(r=>({x:r.date,y:r.avgF})),_rows:avgFRows,borderColor:'#10b981',backgroundColor:'#6ee7b744',tension:0.4,fill:true,pointRadius:5,type:'line'}
+  ],'kWh/Tag (Ø)');
+  const fmtN=v=>v!=null?v.toLocaleString('de-DE'):'—';
+  const fmtD=v=>v==null?'—':v<0?`<span style="color:#f59e0b">⚠${v.toLocaleString('de-DE')}</span>`:`+${v.toLocaleString('de-DE')}`;
+  const tb=document.getElementById('elec-table-body');
+  for(const r of [...data].reverse()){const tr=document.createElement('tr');tr.innerHTML=`<td>${r.date}</td><td>${fmtN(r.consumption_meter_kwh)}</td><td>${fmtD(r.delta)}</td><td>${r.days??'—'}</td><td style="color:#ef4444;font-weight:600">${r.delta!=null&&r.delta>=0?(r.avgPerDay??'—'):'—'}</td><td>${fmtN(r.feedin_meter_kwh)}</td><td>${fmtD(r.deltaF)}</td><td style="color:#10b981;font-weight:600">${r.deltaF!=null&&r.deltaF>=0?(r.avgF??'—'):'—'}</td><td style="text-align:left">${r.notes||''}</td>`;tb.appendChild(tr);}
+}
+setupCustomDateToggle('elec-period','elec-custom-from-wrap','elec-custom-to-wrap',applyElecFilter);
+
+// ==================== WASSER TAB ====================
+const ALL_WATER=computeDeltas(RAW.water,'date','water_meter_m3');
+let waterFiltered=ALL_WATER;
+function applyWaterFilter(){
+  const period=document.getElementById('water-period').value;
+  const from=document.getElementById('water-from').value;
+  const to=document.getElementById('water-to').value;
+  const custom=period==='custom';
+  document.getElementById('water-custom-from-wrap').style.display=custom?'':'none';
+  document.getElementById('water-custom-to-wrap').style.display=custom?'':'none';
+  waterFiltered=filterWithOneBefore(ALL_WATER,'date',period,from,to);
+  renderWater();
+}
+setupCustomDateToggle('water-period','water-custom-from-wrap','water-custom-to-wrap',applyWaterFilter);
+
+function renderWater(){
+  const data=waterFiltered;
+  destroyChart('chartWaterAvg');destroyChart('chartWaterMeter');
+  document.getElementById('water-table-body').innerHTML='';
+  const emptyEl=document.getElementById('water-empty');
+  if(!data.length){emptyEl.style.display='';document.getElementById('water-table').style.display='none';document.getElementById('water-kpi').innerHTML='';return;}
+  emptyEl.style.display='none';document.getElementById('water-table').style.display='';
+  const valid=data.filter(r=>r.delta!=null&&r.delta>=0);
+  const sumM=valid.reduce((a,r)=>a+r.delta,0);
+  const totalDays=valid.reduce((a,r)=>a+(r.days||0),0);
+  const avgD=totalDays>0?(sumM/totalDays).toFixed(3):'—';
+  document.getElementById('water-kpi').innerHTML=
+    `<div class="kpi blue"><div class="val">${sumM.toLocaleString('de-DE')} m³</div><div class="lbl">Verbrauch gesamt</div></div>`+
+    `<div class="kpi blue"><div class="val">${avgD} m³</div><div class="lbl">Ø/Tag</div></div>`+
+    `<div class="kpi"><div class="val">${data.length}</div><div class="lbl">Ablesungen</div></div>`;
+  const avgRows=data.filter(r=>r.avgPerDay!=null&&r.delta>=0);
+  makeTimeChart('chartWaterAvg',[
+    {label:'Ø m³/Tag',data:avgRows.map(r=>({x:r.date,y:r.avgPerDay})),_rows:avgRows,borderColor:'#3b82f6',backgroundColor:'#bfdbfe55',tension:0.4,fill:true,pointRadius:5,type:'line'}
+  ],'m³/Tag (Ø)');
+  makeTimeChart('chartWaterMeter',[
+    {label:'Zählerstand (m³)',data:data.map(r=>({x:r.date,y:r.water_meter_m3})),borderColor:'#0ea5e9',backgroundColor:'#e0f2fe55',tension:0.3,fill:false,type:'line',pointRadius:4}
+  ],'m³');
+  const tb=document.getElementById('water-table-body');
+  const fmtN=v=>v!=null?v.toLocaleString('de-DE'):'—';
+  const fmtD=v=>v==null?'—':v<0?`<span style="color:#f59e0b">⚠${v.toLocaleString('de-DE')}</span>`:`+${v.toLocaleString('de-DE')}`;
+  for(const r of [...data].reverse()){const tr=document.createElement('tr');tr.innerHTML=`<td>${r.date}</td><td>${fmtN(r.water_meter_m3)}</td><td>${fmtD(r.delta)}</td><td>${r.days??'—'}</td><td style="color:#3b82f6;font-weight:600">${r.delta!=null&&r.delta>=0?(r.avgPerDay?.toFixed(3)??'—'):'—'}</td><td style="text-align:left">${r.notes||''}</td>`;tb.appendChild(tr);}
 }
 
-function prevDate(d){const dt=new Date(d+'T12:00:00');dt.setDate(dt.getDate()-1);return dt.toISOString().slice(0,10);}
-const painDays=[...new Set(RAW.abdominal.map(a=>a.date))].sort().reverse();
-if(!painDays.length){
-  document.getElementById('pain-table-empty').style.display='';
-  document.getElementById('pain-table').style.display='none';
-} else {
-  const tbody=document.getElementById('pain-table-body');
-  for(const date of painDays){
-    const foods=mealsByDate[date]||[], prev=mealsByDate[prevDate(date)]||[];
-    const badge=f=>`<span class="food-badge">${f}</span>`;
-    const tr=document.createElement('tr');
-    tr.innerHTML=`<td><strong>${date}</strong></td>`+
-      `<td>${foods.length?foods.map(badge).join(' '):'<span class="muted">—</span>'}</td>`+
-      `<td>${prev.length?prev.map(badge).join(' '):'<span class="muted">—</span>'}</td>`;
-    tbody.appendChild(tr);
+// ==================== KRAFTSTOFF TAB ====================
+// Group all fuel by vehicle
+const FUEL_BY_VEHICLE={};
+for(const r of RAW.fuel){
+  const v=r.vehicle||'Unbekannt';
+  if(!FUEL_BY_VEHICLE[v])FUEL_BY_VEHICLE[v]=[];
+  FUEL_BY_VEHICLE[v].push(r);
+}
+const VEHICLES=Object.keys(FUEL_BY_VEHICLE);
+
+function applyFuelFilter(){
+  const period=document.getElementById('fuel-period').value;
+  const from=document.getElementById('fuel-from').value;
+  const to=document.getElementById('fuel-to').value;
+  const custom=period==='custom';
+  document.getElementById('fuel-custom-from-wrap').style.display=custom?'':'none';
+  document.getElementById('fuel-custom-to-wrap').style.display=custom?'':'none';
+  renderFuel();
+  saveState();
+}
+setupCustomDateToggle('fuel-period','fuel-custom-from-wrap','fuel-custom-to-wrap',renderFuel);
+
+function getFuelFiltered(){
+  const period=document.getElementById('fuel-period').value;
+  const from=document.getElementById('fuel-from').value;
+  const to=document.getElementById('fuel-to').value;
+  const result={};
+  for(const v of VEHICLES){
+    result[v]=filterWithOneBefore(FUEL_BY_VEHICLE[v],'date',period,from,to);
   }
+  return result;
 }
 
-// ===================== STROM TAB =====================
-let elecChart = null;
-let elecAvgChart = null;
-
-// Pre-compute deltas using ALL readings (so intervals are always correct)
-function computeAllDeltas(data) {
-  return data.map((r, i) => {
-    if (i === 0) return { ...r, deltaC: null, deltaF: null, days: null, avgC: null, avgF: null };
-    const prev = data[i-1];
-    const d1 = new Date(prev.date + 'T12:00:00');
-    const d2 = new Date(r.date + 'T12:00:00');
-    const days = Math.round((d2 - d1) / 86400000);
-    const dC = (r.consumption_meter_kwh != null && prev.consumption_meter_kwh != null)
-      ? r.consumption_meter_kwh - prev.consumption_meter_kwh : null;
-    const dF = (r.feedin_meter_kwh != null && prev.feedin_meter_kwh != null)
-      ? r.feedin_meter_kwh - prev.feedin_meter_kwh : null;
-    const avgC = (dC != null && days > 0) ? Math.round(dC / days * 100) / 100 : null;
-    const avgF = (dF != null && days > 0) ? Math.round(dF / days * 100) / 100 : null;
-    return { ...r, deltaC: dC, deltaF: dF, days, avgC, avgF };
-  });
+function fuelDelta(data,prevKey,currKey){
+  // returns array of {date,vehicle,delta,days,avgPerDay} only where both values exist
+  return data.map((r,i)=>{
+    if(i===0)return null;
+    const prev=data[i-1];
+    if(r[currKey]==null||prev[prevKey]==null)return null;
+    const d1=new Date(prev.date+'T12:00:00'),d2=new Date(r.date+'T12:00:00');
+    const days=Math.round((d2-d1)/86400000);
+    const delta=r[currKey]-prev[prevKey];
+    const avgPerDay=days>0&&delta>=0?Math.round(delta/days*1000)/1000:null;
+    return{date:r.date,delta,days,avgPerDay,_r:r};
+  }).filter(Boolean);
 }
 
-const ALL_ELEC = computeAllDeltas(RAW.electricity);
-
-function filterElec(days) {
-  if (!days || days == 0) return ALL_ELEC;
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - parseInt(days));
-  const cutoffStr = cutoff.toISOString().slice(0,10);
-  // Include one entry before the cutoff so the first visible delta is complete
-  const idx = ALL_ELEC.findIndex(r => r.date >= cutoffStr);
-  return idx > 0 ? ALL_ELEC.slice(idx - 1) : ALL_ELEC.slice(Math.max(0, idx));
+function fuelRatio(data,numPrevKey,numCurrKey,denPrevKey,denCurrKey,scale100=false){
+  // ratio: Δnum / Δden (optionally * 100)
+  return data.map((r,i)=>{
+    if(i===0)return null;
+    const prev=data[i-1];
+    if(r[numCurrKey]==null||prev[numPrevKey]==null||r[denCurrKey]==null||prev[denPrevKey]==null)return null;
+    const dNum=r[numCurrKey]-prev[numPrevKey];
+    const dDen=r[denCurrKey]-prev[denPrevKey];
+    if(dDen<=0||dNum<0)return null;
+    const val=scale100?Math.round(dNum/dDen*1000)/10:Math.round(dNum/dDen*1000)/1000;
+    const d1=new Date(prev.date+'T12:00:00'),d2=new Date(r.date+'T12:00:00');
+    const days=Math.round((d2-d1)/86400000);
+    return{date:r.date,val,days,_r:r};
+  }).filter(Boolean);
 }
 
-function renderElec() {
-  const period = document.getElementById('elec-period').value;
-  const mode   = document.getElementById('elec-mode').value;
-  const data   = filterElec(period);
+let fuelChartCount=0;
+function makeFuelChart(title,datasets,yLabel){
+  const id='chartFuel'+(fuelChartCount++);
+  const h=document.createElement('p');h.className='section-title';h.textContent=title;
+  const wrap=document.createElement('div');wrap.className='chart-wrap';
+  const canvas=document.createElement('canvas');canvas.id=id;wrap.appendChild(canvas);
+  document.getElementById('fuel-charts-wrap').appendChild(h);
+  document.getElementById('fuel-charts-wrap').appendChild(wrap);
+  if(datasets.every(d=>!d.data.length)){
+    const p=document.createElement('p');p.className='muted';p.textContent='Keine Daten für diesen Zeitraum.';
+    document.getElementById('fuel-charts-wrap').appendChild(p);return;
+  }
+  makeTimeChart(id,datasets,yLabel);
+}
 
-  if (elecChart)    { elecChart.destroy();    elecChart = null; }
-  if (elecAvgChart) { elecAvgChart.destroy(); elecAvgChart = null; }
+function renderFuel(){
+  // destroy old fuel charts
+  for(let i=0;i<fuelChartCount;i++)destroyChart('chartFuel'+i);
+  fuelChartCount=0;
+  document.getElementById('fuel-charts-wrap').innerHTML='';
+  document.getElementById('fuel-kpi').innerHTML='';
 
-  const emptyEl = document.getElementById('elec-empty');
-  const tableEl = document.getElementById('elec-table');
-  const tbody   = document.getElementById('elec-table-body');
-  tbody.innerHTML = '';
-
-  if (!data.length) {
-    emptyEl.style.display = '';
-    tableEl.style.display = 'none';
-    document.getElementById('elec-summary').innerHTML = '';
+  const byVehicle=getFuelFiltered();
+  if(VEHICLES.every(v=>byVehicle[v].length===0)){
+    document.getElementById('fuel-charts-wrap').innerHTML='<p class="muted">Keine Kraftstoffdaten für diesen Zeitraum.</p>';
     return;
   }
-  emptyEl.style.display = 'none';
-  tableEl.style.display = '';
 
-  // Summary
-  const validDeltaC = data.filter(r=>r.deltaC!=null&&r.deltaC>=0).map(r=>r.deltaC);
-  const validDeltaF = data.filter(r=>r.deltaF!=null&&r.deltaF>=0).map(r=>r.deltaF);
-  const sumC = validDeltaC.reduce((a,b)=>a+b,0);
-  const sumF = validDeltaF.reduce((a,b)=>a+b,0);
-  const totalDays = (() => {
-    const withDays = data.filter(r=>r.days!=null&&r.days>0);
-    return withDays.reduce((a,r)=>a+r.days,0);
-  })();
-  const globalAvgC = totalDays > 0 ? (sumC / totalDays).toFixed(2) : '—';
-  const globalAvgF = totalDays > 0 ? (sumF / totalDays).toFixed(2) : '—';
-  document.getElementById('elec-summary').innerHTML =
-    `<div class="elec-card verbrauch"><div class="val">${sumC.toLocaleString('de-DE')} kWh</div><div class="lbl">Verbrauch gesamt</div></div>`+
-    `<div class="elec-card verbrauch"><div class="val">${globalAvgC} kWh</div><div class="lbl">Ø pro Tag (Verbr.)</div></div>`+
-    `<div class="elec-card einspeisung"><div class="val">${sumF.toLocaleString('de-DE')} kWh</div><div class="lbl">Einspeisung gesamt</div></div>`+
-    `<div class="elec-card einspeisung"><div class="val">${globalAvgF} kWh</div><div class="lbl">Ø pro Tag (Einsp.)</div></div>`+
-    `<div class="elec-card"><div class="val">${data.length}</div><div class="lbl">Ablesungen</div></div>`;
-
-  // Chart 1 titles
-  const titles = {
-    avg_per_day: 'Ø Verbrauch & Einspeisung pro Tag',
-    delta: 'Verbrauch je Intervall (Gesamt-Δ)',
-    meter: 'Zählerstand (absolut)'
-  };
-  document.getElementById('elec-chart1-title').textContent = titles[mode];
-
-  const labels = data.map(r => r.date);
-  let dsC, dsF;
-  if (mode === 'avg_per_day') {
-    dsC = { label:'Ø Verbr./Tag (kWh)', data: data.map(r=>r.avgC!=null&&r.deltaC>=0?r.avgC:null),
-      backgroundColor:'#fca5a5', borderColor:'#ef4444', borderWidth:1, type:'bar' };
-    dsF = { label:'Ø Einsp./Tag (kWh)', data: data.map(r=>r.avgF!=null&&r.deltaF>=0?r.avgF:null),
-      backgroundColor:'#6ee7b7', borderColor:'#10b981', borderWidth:1, type:'bar' };
-  } else if (mode === 'delta') {
-    dsC = { label:'Verbr. Δ (kWh)', data: data.map(r=>r.deltaC!=null&&r.deltaC>=0?r.deltaC:null),
-      backgroundColor:'#fca5a5', borderColor:'#ef4444', borderWidth:1, type:'bar' };
-    dsF = { label:'Einsp. Δ (kWh)', data: data.map(r=>r.deltaF!=null&&r.deltaF>=0?r.deltaF:null),
-      backgroundColor:'#6ee7b7', borderColor:'#10b981', borderWidth:1, type:'bar' };
-  } else {
-    dsC = { label:'Zähler Verbr. (kWh)', data: data.map(r=>r.consumption_meter_kwh),
-      borderColor:'#ef4444', backgroundColor:'#fca5a544', tension:0.3, fill:false, type:'line', pointRadius:4 };
-    dsF = { label:'Zähler Einsp. (kWh)', data: data.map(r=>r.feedin_meter_kwh),
-      borderColor:'#10b981', backgroundColor:'#6ee7b744', tension:0.3, fill:false, type:'line', pointRadius:4 };
+  // KPIs
+  let kpiHtml='';
+  for(const v of VEHICLES){
+    const data=byVehicle[v];
+    const kmDeltas=fuelDelta(data,'odometer_km','odometer_km');
+    const litDeltas=fuelDelta(data,'liters','liters');
+    const eurDeltas=fuelDelta(data,'total_price_eur','total_price_eur');
+    const totalKm=kmDeltas.filter(r=>r.delta>=0).reduce((a,r)=>a+r.delta,0);
+    const totalLit=litDeltas.filter(r=>r.delta>=0).reduce((a,r)=>a+r.delta,0);
+    const totalEur=eurDeltas.filter(r=>r.delta>=0).reduce((a,r)=>a+r.delta,0);
+    const daySpan=data.length>=2?Math.round((new Date(data[data.length-1].date+'T12:00:00')-new Date(data[0].date+'T12:00:00'))/86400000):0;
+    kpiHtml+=`<div class="kpi orange"><div class="val">${v}</div><div class="lbl">Fahrzeug</div></div>`+
+      `<div class="kpi"><div class="val">${totalKm.toLocaleString('de-DE')} km</div><div class="lbl">Δ Kilometer</div></div>`+
+      `<div class="kpi"><div class="val">${totalLit.toFixed(1)} L</div><div class="lbl">Kraftstoff gesamt</div></div>`+
+      `<div class="kpi"><div class="val">${totalEur.toFixed(2)} €</div><div class="lbl">Kosten gesamt</div></div>`;
   }
+  document.getElementById('fuel-kpi').innerHTML=kpiHtml;
 
-  elecChart = new Chart(document.getElementById('chartElec').getContext('2d'), {
-    data: { labels, datasets: [dsC, dsF] },
-    options: {
-      interaction:{ mode:'index', intersect:false },
-      scales: {
-        x:{ type:'time', time:{ unit:'day', tooltipFormat:'yyyy-MM-dd', displayFormats:{ day:'dd.MM', month:'MMM yy' } },
-            ticks:{ maxTicksLimit:16, maxRotation:45 } },
-        y:{ ticks:{ precision:2 }, title:{ display:true,
-          text: mode==='meter' ? 'kWh (Zählerstand)' : mode==='delta' ? 'kWh (Δ)' : 'kWh/Tag (Ø)' } }
-      },
-      plugins:{ legend:{ display:true },
-        tooltip:{ callbacks:{ afterLabel(ctx){
-          const r = data[ctx.dataIndex];
-          if(r.days!=null && mode!=='meter') return `  (über ${r.days} Tag${r.days!==1?'e':''})`;
-          return '';
-        }}}
-      }
-    }
-  });
+  const graphDefs=[
+    {title:'Kilometerstand',fn:(data,v,ci)=>{const pts=data.filter(r=>r.odometer_km!=null).map(r=>({x:r.date,y:r.odometer_km}));return{label:v,data:pts,borderColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length],backgroundColor:'transparent',tension:0.2,fill:false,type:'line',pointRadius:4};},yLabel:'km'},
+    {title:'Ø km/Tag',fn:(data,v,ci)=>{const d=fuelDelta(data,'odometer_km','odometer_km').filter(r=>r.delta>=0&&r.avgPerDay!=null);return{label:v,data:d.map(r=>({x:r.date,y:r.avgPerDay})),_rows:d,borderColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length],backgroundColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length]+'33',tension:0.4,fill:true,type:'line',pointRadius:5};},yLabel:'km/Tag'},
+    {title:'Kraftstoff gesamt (pro Tankfüllung)',fn:(data,v,ci)=>{const pts=data.filter(r=>r.liters!=null).map(r=>({x:r.date,y:r.liters}));return{label:v,data:pts,borderColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length],backgroundColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length]+'66',type:'bar'};},yLabel:'Liter'},
+    {title:'Kosten gesamt (pro Tankfüllung)',fn:(data,v,ci)=>{const pts=data.filter(r=>r.total_price_eur!=null).map(r=>({x:r.date,y:r.total_price_eur}));return{label:v,data:pts,borderColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length],backgroundColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length]+'66',type:'bar'};},yLabel:'€'},
+    {title:'Ø Kosten/Tag',fn:(data,v,ci)=>{const d=fuelDelta(data,'total_price_eur','total_price_eur').filter(r=>r.delta>=0&&r.avgPerDay!=null);return{label:v,data:d.map(r=>({x:r.date,y:r.avgPerDay})),_rows:d,borderColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length],backgroundColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length]+'33',tension:0.4,fill:true,type:'line',pointRadius:5};},yLabel:'€/Tag'},
+    {title:'Ø Kraftstoff/Tag',fn:(data,v,ci)=>{const d=fuelDelta(data,'liters','liters').filter(r=>r.delta>=0&&r.avgPerDay!=null);return{label:v,data:d.map(r=>({x:r.date,y:r.avgPerDay})),_rows:d,borderColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length],backgroundColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length]+'33',tension:0.4,fill:true,type:'line',pointRadius:5};},yLabel:'L/Tag'},
+    {title:'Verbrauch l/100km',fn:(data,v,ci)=>{const d=fuelRatio(data,'liters','liters','odometer_km','odometer_km',true).filter(r=>r.val>0&&r.val<50);return{label:v,data:d.map(r=>({x:r.date,y:r.val})),_rows:d,borderColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length],backgroundColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length]+'33',tension:0.4,fill:false,type:'line',pointRadius:5};},yLabel:'l/100km'},
+  ];
 
-  // Chart 2: always avg per day as line over time
-  const avgLabels = data.filter(r=>r.avgC!=null||r.avgF!=null).map(r=>r.date);
-  const avgC = data.filter(r=>r.avgC!=null||r.avgF!=null).map(r=>r.avgC!=null&&r.deltaC>=0?r.avgC:null);
-  const avgF = data.filter(r=>r.avgC!=null||r.avgF!=null).map(r=>r.avgF!=null&&r.deltaF>=0?r.avgF:null);
-
-  elecAvgChart = new Chart(document.getElementById('chartElecAvg').getContext('2d'), {
-    type: 'line',
-    data: {
-      labels: avgLabels,
-      datasets: [
-        { label:'Ø Verbr./Tag (kWh)', data: avgC,
-          borderColor:'#ef4444', backgroundColor:'#fca5a544', tension:0.4, fill:true, pointRadius:5 },
-        { label:'Ø Einsp./Tag (kWh)', data: avgF,
-          borderColor:'#10b981', backgroundColor:'#6ee7b744', tension:0.4, fill:true, pointRadius:5 }
-      ]
-    },
-    options: {
-      interaction:{ mode:'index', intersect:false },
-      scales: {
-        x:{ type:'time', time:{ unit:'day', tooltipFormat:'yyyy-MM-dd', displayFormats:{ day:'dd.MM', month:'MMM yy' } },
-            ticks:{ maxTicksLimit:16, maxRotation:45 } },
-        y:{ title:{ display:true, text:'kWh/Tag (Ø)' }, ticks:{ precision:2 } }
-      },
-      plugins:{ legend:{ display:true },
-        tooltip:{ callbacks:{ afterLabel(ctx){
-          const r = data.filter(x=>x.days!=null)[ctx.dataIndex];
-          if(r && r.days) return `  (über ${r.days} Tag${r.days!==1?'e':''})`;
-          return '';
-        }}}
-      }
-    }
-  });
-
-  // Table
-  const fmtN = v => v != null ? v.toLocaleString('de-DE') : '—';
-  const fmtD = v => v == null ? '—' : v < 0
-    ? `<span style="color:#f59e0b">⚠ ${v.toLocaleString('de-DE')}</span>`
-    : '+' + v.toLocaleString('de-DE');
-  const fmtAvg = v => v == null ? '—' : v.toFixed(2);
-
-  for (const r of [...data].reverse()) {
-    const tr = document.createElement('tr');
-    tr.style.borderBottom = '1px solid #eee';
-    tr.innerHTML =
-      `<td style="padding:.35rem .6rem">${r.date}</td>`+
-      `<td style="padding:.35rem .6rem;text-align:right">${fmtN(r.consumption_meter_kwh)}</td>`+
-      `<td style="padding:.35rem .6rem;text-align:right">${fmtD(r.deltaC)}</td>`+
-      `<td style="padding:.35rem .6rem;text-align:right">${r.days ?? '—'}</td>`+
-      `<td style="padding:.35rem .6rem;text-align:right;font-weight:600;color:#ef4444">${r.deltaC!=null&&r.deltaC>=0 ? fmtAvg(r.avgC) : '—'}</td>`+
-      `<td style="padding:.35rem .6rem;text-align:right">${fmtN(r.feedin_meter_kwh)}</td>`+
-      `<td style="padding:.35rem .6rem;text-align:right">${fmtD(r.deltaF)}</td>`+
-      `<td style="padding:.35rem .6rem;text-align:right;font-weight:600;color:#10b981">${r.deltaF!=null&&r.deltaF>=0 ? fmtAvg(r.avgF) : '—'}</td>`+
-      `<td style="padding:.35rem .6rem;color:#666">${r.notes||''}</td>`;
-    tbody.appendChild(tr);
+  for(const gdef of graphDefs){
+    const datasets=VEHICLES.map((v,ci)=>gdef.fn(byVehicle[v],v,ci)).filter(d=>d.data.length>0);
+    makeFuelChart(gdef.title,datasets,gdef.yLabel);
   }
 }
 
-// Restore active tab + run strom if needed
+// ==================== INIT: RESTORE STATE ====================
 (function(){
-  const params = new URLSearchParams(window.location.search);
-  if(params.get('tab')==='strom'){
-    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
-    document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
-    document.getElementById('tab-strom').classList.add('active');
-    document.querySelectorAll('.tab-btn')[1].classList.add('active');
-    renderElec();
-  }
+  const s=loadState();
+  const tabFromUrl=new URLSearchParams(window.location.search).get('tab');
+  const tab=tabFromUrl||s.tab||'illness';
+  // Restore selects before switching
+  if(s.elecPeriod)document.getElementById('elec-period').value=s.elecPeriod;
+  if(s.elecMode)  document.getElementById('elec-mode').value=s.elecMode;
+  if(s.elecFrom)  document.getElementById('elec-from').value=s.elecFrom;
+  if(s.elecTo)    document.getElementById('elec-to').value=s.elecTo;
+  if(s.elecPeriod==='custom'){document.getElementById('elec-custom-from-wrap').style.display='';document.getElementById('elec-custom-to-wrap').style.display='';}
+  if(s.waterPeriod)document.getElementById('water-period').value=s.waterPeriod;
+  if(s.waterFrom) document.getElementById('water-from').value=s.waterFrom;
+  if(s.waterTo)   document.getElementById('water-to').value=s.waterTo;
+  if(s.waterPeriod==='custom'){document.getElementById('water-custom-from-wrap').style.display='';document.getElementById('water-custom-to-wrap').style.display='';}
+  if(s.fuelPeriod)document.getElementById('fuel-period').value=s.fuelPeriod;
+  if(s.fuelFrom)  document.getElementById('fuel-from').value=s.fuelFrom;
+  if(s.fuelTo)    document.getElementById('fuel-to').value=s.fuelTo;
+  if(s.fuelPeriod==='custom'){document.getElementById('fuel-custom-from-wrap').style.display='';document.getElementById('fuel-custom-to-wrap').style.display='';}
+  // Also re-filter with restored values
+  elecFiltered=filterWithOneBefore(ALL_ELEC,'date',document.getElementById('elec-period').value,document.getElementById('elec-from').value,document.getElementById('elec-to').value);
+  waterFiltered=filterWithOneBefore(ALL_WATER,'date',document.getElementById('water-period').value,document.getElementById('water-from').value,document.getElementById('water-to').value);
+  switchTab(tab,null);
 })();
 </script>
 {% endblock %}

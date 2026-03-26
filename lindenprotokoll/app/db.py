@@ -612,6 +612,36 @@ def get_stats_data(person_id=None, period_days=90):
         "electricity": electricity_data,
     }
 
+    # Water and fuel fetched separately (no person filter needed)
+    with connect() as conn:
+        water_rows = conn.execute("""
+            SELECT e.date, e.entry_id, w.water_meter_m3, w.notes
+            FROM entries e
+            JOIN consumption_water w ON e.entry_id = w.entry_id
+            ORDER BY e.date ASC, e.entry_id ASC
+        """).fetchall()
+        water_data = [dict(r) for r in water_rows]
+
+        fuel_rows = conn.execute("""
+            SELECT e.date, e.entry_id,
+                   f.vehicle, f.odometer_km, f.total_price_eur,
+                   f.liters, f.price_per_liter, f.notes
+            FROM entries e
+            JOIN consumption_fuel f ON e.entry_id = f.entry_id
+            ORDER BY e.date ASC, e.entry_id ASC
+        """).fetchall()
+        fuel_data = [dict(r) for r in fuel_rows]
+
+    return {
+        "abdominal": abdominal_data,
+        "meals": meal_data,
+        "top_suspect_foods": top_suspect_foods,
+        "people": people_data,
+        "electricity": electricity_data,
+        "water": water_data,
+        "fuel": fuel_data,
+    }
+
 def _entry_content_signature(conn, entry_id, subtype):
     """Return a hashable signature of the entry's actual content for exact-duplicate detection."""
     if subtype == 'meal':

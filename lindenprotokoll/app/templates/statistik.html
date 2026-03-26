@@ -430,7 +430,12 @@ function renderWater(){
 }
 
 // ==================== KRAFTSTOFF TAB ====================
-// Group all fuel by vehicle
+// Data model:
+//   odometer_km   = cumulative reading  → delta between entries = km driven
+//   liters        = per fill-up value   → direct value
+//   total_price_eur = per fill-up value → direct value
+//   price_per_liter = per fill-up value → direct value
+
 const FUEL_BY_VEHICLE={};
 for(const r of RAW.fuel){
   const v=r.vehicle||'Unbekannt';
@@ -441,8 +446,6 @@ const VEHICLES=Object.keys(FUEL_BY_VEHICLE);
 
 function applyFuelFilter(){
   const period=document.getElementById('fuel-period').value;
-  const from=document.getElementById('fuel-from').value;
-  const to=document.getElementById('fuel-to').value;
   const custom=period==='custom';
   document.getElementById('fuel-custom-from-wrap').style.display=custom?'':'none';
   document.getElementById('fuel-custom-to-wrap').style.display=custom?'':'none';
@@ -457,101 +460,151 @@ function getFuelFiltered(){
   const to=document.getElementById('fuel-to').value;
   const result={};
   for(const v of VEHICLES){
+    // For odometer delta: include one entry before cutoff
     result[v]=filterWithOneBefore(FUEL_BY_VEHICLE[v],'date',period,from,to);
   }
   return result;
 }
 
-function fuelDelta(data,prevKey,currKey){
-  // returns array of {date,vehicle,delta,days,avgPerDay} only where both values exist
+// Odometer delta: Δkm between consecutive entries, avg km/day
+function odometerDeltas(data){
   return data.map((r,i)=>{
-    if(i===0)return null;
+    if(i===0) return null;
     const prev=data[i-1];
-    if(r[currKey]==null||prev[prevKey]==null)return null;
-    const d1=new Date(prev.date+'T12:00:00'),d2=new Date(r.date+'T12:00:00');
+    if(r.odometer_km==null||prev.odometer_km==null) return null;
+    const d1=new Date(prev.date+'T12:00:00'), d2=new Date(r.date+'T12:00:00');
     const days=Math.round((d2-d1)/86400000);
-    const delta=r[currKey]-prev[prevKey];
-    const avgPerDay=days>0&&delta>=0?Math.round(delta/days*1000)/1000:null;
-    return{date:r.date,delta,days,avgPerDay,_r:r};
+    const delta=r.odometer_km-prev.odometer_km;
+    if(delta<0||days<=0) return null;
+    return {date:r.date, delta, days, avgPerDay:Math.round(delta/days*100)/100, _r:r};
   }).filter(Boolean);
 }
 
-function fuelRatio(data,numPrevKey,numCurrKey,denPrevKey,denCurrKey,scale100=false){
-  // ratio: Δnum / Δden (optionally * 100)
+// For per-fill-up values (liters, price): compute avg/day = value / days since last entry
+function fillupAvgPerDay(data, key){
   return data.map((r,i)=>{
-    if(i===0)return null;
+    if(i===0) return null;
     const prev=data[i-1];
-    if(r[numCurrKey]==null||prev[numPrevKey]==null||r[denCurrKey]==null||prev[denPrevKey]==null)return null;
-    const dNum=r[numCurrKey]-prev[numPrevKey];
-    const dDen=r[denCurrKey]-prev[denPrevKey];
-    if(dDen<=0||dNum<0)return null;
-    const val=scale100?Math.round(dNum/dDen*1000)/10:Math.round(dNum/dDen*1000)/1000;
-    const d1=new Date(prev.date+'T12:00:00'),d2=new Date(r.date+'T12:00:00');
+    if(r[key]==null) return null;
+    const d1=new Date(prev.date+'T12:00:00'), d2=new Date(r.date+'T12:00:00');
     const days=Math.round((d2-d1)/86400000);
-    return{date:r.date,val,days,_r:r};
+    if(days<=0) return null;
+    return {date:r.date, value:r[key], avgPerDay:Math.round(r[key]/days*1000)/1000, days, _r:r};
+  }).filter(Boolean);
+}
+
+// l/100km: liters per fill / km since last fill * 100
+function litersPer100km(data){
+  return data.map((r,i)=>{
+    if(i===0) return null;
+    const prev=data[i-1];
+    if(r.liters==null||r.odometer_km==null||prev.odometer_km==null) return null;
+    const km=r.odometer_km-prev.odometer_km;
+    if(km<=0) return null;
+    const val=Math.round(r.liters/km*10000)/100; // l/100km
+    if(val>50||val<1) return null; // sanity check
+    return {date:r.date, val, km, liters:r.liters, _r:r};
   }).filter(Boolean);
 }
 
 let fuelChartCount=0;
-function makeFuelChart(title,datasets,yLabel){
+function makeFuelChart(title, datasets, yLabel){
   const id='chartFuel'+(fuelChartCount++);
-  const h=document.createElement('p');h.className='section-title';h.textContent=title;
-  const wrap=document.createElement('div');wrap.className='chart-wrap';
-  const canvas=document.createElement('canvas');canvas.id=id;wrap.appendChild(canvas);
+  const h=document.createElement('p'); h.className='section-title'; h.textContent=title;
+  const wrap=document.createElement('div'); wrap.className='chart-wrap';
+  const canvas=document.createElement('canvas'); canvas.id=id; wrap.appendChild(canvas);
   document.getElementById('fuel-charts-wrap').appendChild(h);
   document.getElementById('fuel-charts-wrap').appendChild(wrap);
-  if(datasets.every(d=>!d.data.length)){
-    const p=document.createElement('p');p.className='muted';p.textContent='Keine Daten für diesen Zeitraum.';
-    document.getElementById('fuel-charts-wrap').appendChild(p);return;
+  const hasData=datasets.some(d=>d.data&&d.data.length>0);
+  if(!hasData){
+    const p=document.createElement('p'); p.className='muted'; p.textContent='Keine Daten für diesen Zeitraum.';
+    document.getElementById('fuel-charts-wrap').appendChild(p); return;
   }
-  makeTimeChart(id,datasets,yLabel);
+  makeTimeChart(id, datasets, yLabel);
 }
 
 function renderFuel(){
-  // destroy old fuel charts
-  for(let i=0;i<fuelChartCount;i++)destroyChart('chartFuel'+i);
+  for(let i=0;i<fuelChartCount;i++) destroyChart('chartFuel'+i);
   fuelChartCount=0;
   document.getElementById('fuel-charts-wrap').innerHTML='';
   document.getElementById('fuel-kpi').innerHTML='';
 
   const byVehicle=getFuelFiltered();
-  if(VEHICLES.every(v=>byVehicle[v].length===0)){
+  if(VEHICLES.every(v=>!byVehicle[v]||byVehicle[v].length===0)){
     document.getElementById('fuel-charts-wrap').innerHTML='<p class="muted">Keine Kraftstoffdaten für diesen Zeitraum.</p>';
     return;
   }
 
-  // KPIs
+  // KPIs per vehicle
   let kpiHtml='';
   for(const v of VEHICLES){
     const data=byVehicle[v];
-    const kmDeltas=fuelDelta(data,'odometer_km','odometer_km');
-    const litDeltas=fuelDelta(data,'liters','liters');
-    const eurDeltas=fuelDelta(data,'total_price_eur','total_price_eur');
-    const totalKm=kmDeltas.filter(r=>r.delta>=0).reduce((a,r)=>a+r.delta,0);
-    const totalLit=litDeltas.filter(r=>r.delta>=0).reduce((a,r)=>a+r.delta,0);
-    const totalEur=eurDeltas.filter(r=>r.delta>=0).reduce((a,r)=>a+r.delta,0);
-    const daySpan=data.length>=2?Math.round((new Date(data[data.length-1].date+'T12:00:00')-new Date(data[0].date+'T12:00:00'))/86400000):0;
-    kpiHtml+=`<div class="kpi orange"><div class="val">${v}</div><div class="lbl">Fahrzeug</div></div>`+
+    if(!data||data.length===0) continue;
+    const kmD=odometerDeltas(data);
+    const totalKm=kmD.reduce((a,r)=>a+r.delta,0);
+    const totalLit=data.filter(r=>r.liters!=null).reduce((a,r)=>a+r.liters,0);
+    const totalEur=data.filter(r=>r.total_price_eur!=null).reduce((a,r)=>a+r.total_price_eur,0);
+    const entries=data.filter(r=>r.liters!=null||r.total_price_eur!=null).length;
+    kpiHtml+=
+      `<div class="kpi orange"><div class="val">${v}</div><div class="lbl">Fahrzeug</div></div>`+
       `<div class="kpi"><div class="val">${totalKm.toLocaleString('de-DE')} km</div><div class="lbl">Δ Kilometer</div></div>`+
       `<div class="kpi"><div class="val">${totalLit.toFixed(1)} L</div><div class="lbl">Kraftstoff gesamt</div></div>`+
-      `<div class="kpi"><div class="val">${totalEur.toFixed(2)} €</div><div class="lbl">Kosten gesamt</div></div>`;
+      `<div class="kpi"><div class="val">${totalEur.toFixed(2)} €</div><div class="lbl">Kosten gesamt</div></div>`+
+      `<div class="kpi"><div class="val">${entries}</div><div class="lbl">Tankungen</div></div>`;
   }
   document.getElementById('fuel-kpi').innerHTML=kpiHtml;
 
-  const graphDefs=[
-    {title:'Kilometerstand',fn:(data,v,ci)=>{const pts=data.filter(r=>r.odometer_km!=null).map(r=>({x:r.date,y:r.odometer_km}));return{label:v,data:pts,borderColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length],backgroundColor:'transparent',tension:0.2,fill:false,type:'line',pointRadius:4};},yLabel:'km'},
-    {title:'Ø km/Tag',fn:(data,v,ci)=>{const d=fuelDelta(data,'odometer_km','odometer_km').filter(r=>r.delta>=0&&r.avgPerDay!=null);return{label:v,data:d.map(r=>({x:r.date,y:r.avgPerDay})),_rows:d,borderColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length],backgroundColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length]+'33',tension:0.4,fill:true,type:'line',pointRadius:5};},yLabel:'km/Tag'},
-    {title:'Kraftstoff gesamt (pro Tankfüllung)',fn:(data,v,ci)=>{const pts=data.filter(r=>r.liters!=null).map(r=>({x:r.date,y:r.liters}));return{label:v,data:pts,borderColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length],backgroundColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length]+'66',type:'bar'};},yLabel:'Liter'},
-    {title:'Kosten gesamt (pro Tankfüllung)',fn:(data,v,ci)=>{const pts=data.filter(r=>r.total_price_eur!=null).map(r=>({x:r.date,y:r.total_price_eur}));return{label:v,data:pts,borderColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length],backgroundColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length]+'66',type:'bar'};},yLabel:'€'},
-    {title:'Ø Kosten/Tag',fn:(data,v,ci)=>{const d=fuelDelta(data,'total_price_eur','total_price_eur').filter(r=>r.delta>=0&&r.avgPerDay!=null);return{label:v,data:d.map(r=>({x:r.date,y:r.avgPerDay})),_rows:d,borderColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length],backgroundColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length]+'33',tension:0.4,fill:true,type:'line',pointRadius:5};},yLabel:'€/Tag'},
-    {title:'Ø Kraftstoff/Tag',fn:(data,v,ci)=>{const d=fuelDelta(data,'liters','liters').filter(r=>r.delta>=0&&r.avgPerDay!=null);return{label:v,data:d.map(r=>({x:r.date,y:r.avgPerDay})),_rows:d,borderColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length],backgroundColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length]+'33',tension:0.4,fill:true,type:'line',pointRadius:5};},yLabel:'L/Tag'},
-    {title:'Verbrauch l/100km',fn:(data,v,ci)=>{const d=fuelRatio(data,'liters','liters','odometer_km','odometer_km',true).filter(r=>r.val>0&&r.val<50);return{label:v,data:d.map(r=>({x:r.date,y:r.val})),_rows:d,borderColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length],backgroundColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length]+'33',tension:0.4,fill:false,type:'line',pointRadius:5};},yLabel:'l/100km'},
-  ];
+  // Graph 1: Kilometerstand (cumulative)
+  makeFuelChart('Kilometerstand', VEHICLES.map((v,ci)=>{
+    const pts=byVehicle[v].filter(r=>r.odometer_km!=null).map(r=>({x:r.date,y:r.odometer_km}));
+    return{label:v,data:pts,borderColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length],backgroundColor:'transparent',tension:0.2,fill:false,type:'line',pointRadius:4};
+  }).filter(d=>d.data.length), 'km');
 
-  for(const gdef of graphDefs){
-    const datasets=VEHICLES.map((v,ci)=>gdef.fn(byVehicle[v],v,ci)).filter(d=>d.data.length>0);
-    makeFuelChart(gdef.title,datasets,gdef.yLabel);
-  }
+  // Graph 2: Ø km/Tag (odometer delta / days)
+  makeFuelChart('Ø km/Tag', VEHICLES.map((v,ci)=>{
+    const d=odometerDeltas(byVehicle[v]);
+    return{label:v,data:d.map(r=>({x:r.date,y:r.avgPerDay})),_rows:d,
+      borderColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length],backgroundColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length]+'33',
+      tension:0.4,fill:true,type:'line',pointRadius:5};
+  }).filter(d=>d.data.length), 'km/Tag');
+
+  // Graph 3: Liter pro Tankfüllung (direct value per entry)
+  makeFuelChart('Liter pro Tankfüllung', VEHICLES.map((v,ci)=>{
+    const pts=byVehicle[v].filter(r=>r.liters!=null).map(r=>({x:r.date,y:r.liters}));
+    return{label:v,data:pts,backgroundColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length]+'99',
+      borderColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length],borderWidth:1,type:'bar'};
+  }).filter(d=>d.data.length), 'Liter');
+
+  // Graph 4: Kosten pro Tankfüllung (direct value per entry)
+  makeFuelChart('Kosten pro Tankfüllung', VEHICLES.map((v,ci)=>{
+    const pts=byVehicle[v].filter(r=>r.total_price_eur!=null).map(r=>({x:r.date,y:r.total_price_eur}));
+    return{label:v,data:pts,backgroundColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length]+'99',
+      borderColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length],borderWidth:1,type:'bar'};
+  }).filter(d=>d.data.length), '€');
+
+  // Graph 5: Ø €/Tag (cost per fill / days since last fill)
+  makeFuelChart('Ø Kosten/Tag', VEHICLES.map((v,ci)=>{
+    const d=fillupAvgPerDay(byVehicle[v],'total_price_eur');
+    return{label:v,data:d.map(r=>({x:r.date,y:r.avgPerDay})),_rows:d,
+      borderColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length],backgroundColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length]+'33',
+      tension:0.4,fill:true,type:'line',pointRadius:5};
+  }).filter(d=>d.data.length), '€/Tag');
+
+  // Graph 6: Ø L/Tag (liters per fill / days since last fill)
+  makeFuelChart('Ø Kraftstoff/Tag', VEHICLES.map((v,ci)=>{
+    const d=fillupAvgPerDay(byVehicle[v],'liters');
+    return{label:v,data:d.map(r=>({x:r.date,y:r.avgPerDay})),_rows:d,
+      borderColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length],backgroundColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length]+'33',
+      tension:0.4,fill:true,type:'line',pointRadius:5};
+  }).filter(d=>d.data.length), 'L/Tag');
+
+  // Graph 7: l/100km (liters per fill / km since last odometer)
+  makeFuelChart('Verbrauch l/100km', VEHICLES.map((v,ci)=>{
+    const d=litersPer100km(byVehicle[v]);
+    return{label:v,data:d.map(r=>({x:r.date,y:r.val})),_rows:d,
+      borderColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length],backgroundColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length]+'33',
+      tension:0.4,fill:false,type:'line',pointRadius:5};
+  }).filter(d=>d.data.length), 'l/100km');
 }
 
 // ==================== INIT: RESTORE STATE ====================

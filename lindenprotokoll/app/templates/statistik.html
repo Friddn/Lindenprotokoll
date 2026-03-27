@@ -122,7 +122,7 @@ table.data-table td:first-child{text-align:left;}
       <div><label>Zeitraum</label>
         <select id="water-period" onchange="applyWaterFilter();saveState()">
           <option value="90">90 Tage</option><option value="180">6 Monate</option>
-          <option value="365" selected>1 Jahr</option><option value="730">2 Jahre</option><option value="0">Alle</option><option value="custom">Eigener…</option>
+          <option value="365">1 Jahr</option><option value="730">2 Jahre</option><option value="0" selected>Alle</option><option value="custom">Eigener…</option>
         </select>
       </div>
       <div id="water-custom-from-wrap" style="display:none"><label>Von</label><input type="date" id="water-from" onchange="applyWaterFilter();saveState()"></div>
@@ -148,8 +148,8 @@ table.data-table td:first-child{text-align:left;}
     <div class="filter-row" id="fuel-filters">
       <div><label>Zeitraum</label>
         <select id="fuel-period" onchange="applyFuelFilter();saveState()">
-          <option value="180">6 Monate</option><option value="365" selected>1 Jahr</option>
-          <option value="730">2 Jahre</option><option value="0">Alle</option><option value="custom">Eigener…</option>
+          <option value="180">6 Monate</option><option value="365">1 Jahr</option>
+          <option value="730">2 Jahre</option><option value="0" selected>Alle</option><option value="custom">Eigener…</option>
         </select>
       </div>
       <div id="fuel-custom-from-wrap" style="display:none"><label>Von</label><input type="date" id="fuel-from" onchange="applyFuelFilter();saveState()"></div>
@@ -231,10 +231,13 @@ function filterByPeriodAndCustom(data, dateKey, period, fromVal, toVal) {
 
 // For delta calc: include one entry before cutoff so first interval has a previous value
 function filterWithOneBefore(allData, dateKey, period, fromVal, toVal) {
+  // For 'Alle' or very few data points, return all
+  if(!period || period==='0') return allData;
   const filtered = filterByPeriodAndCustom(allData, dateKey, period, fromVal, toVal);
   if(!filtered.length) return filtered;
   const firstDate = filtered[0][dateKey];
   const idx = allData.findIndex(r=>r[dateKey]===firstDate);
+  // Include one entry before cutoff so first visible interval has a delta
   return idx>0 ? [allData[idx-1], ...filtered] : filtered;
 }
 
@@ -317,12 +320,19 @@ const VEHICLE_COLORS=['#3b82f6','#f59e0b','#10b981','#ef4444','#8b5cf6','#ec4899
 })();
 
 // ==================== STROM TAB ====================
-const ALL_ELEC = computeDeltas(RAW.electricity,'date','consumption_meter_kwh').map((r,i)=>{
+// Build ALL_ELEC with independent deltas for consumption and feedin
+const ALL_ELEC = RAW.electricity.map((r,i)=>{
+  if(i===0) return {...r, delta:null, deltaF:null, days:null, avgPerDay:null, avgF:null};
   const prev=RAW.electricity[i-1];
-  const dF=(i>0&&r.feedin_meter_kwh!=null&&prev?.feedin_meter_kwh!=null)?r.feedin_meter_kwh-prev.feedin_meter_kwh:null;
-  const days=r.days;
+  const d1=new Date(prev.date+'T12:00:00'), d2=new Date(r.date+'T12:00:00');
+  const days=Math.round((d2-d1)/86400000);
+  // Consumption delta: only if both entries have a value
+  const dC=(r.consumption_meter_kwh!=null&&prev.consumption_meter_kwh!=null)?r.consumption_meter_kwh-prev.consumption_meter_kwh:null;
+  // Feedin delta: independently, only if both have a value
+  const dF=(r.feedin_meter_kwh!=null&&prev.feedin_meter_kwh!=null)?r.feedin_meter_kwh-prev.feedin_meter_kwh:null;
+  const avgC=(dC!=null&&dC>=0&&days>0)?Math.round(dC/days*1000)/1000:null;
   const avgF=(dF!=null&&dF>=0&&days>0)?Math.round(dF/days*1000)/1000:null;
-  return {...r,deltaF:dF,avgF};
+  return {...r, delta:dC, deltaF:dF, days, avgPerDay:avgC, avgF};
 });
 
 let elecFiltered=ALL_ELEC;

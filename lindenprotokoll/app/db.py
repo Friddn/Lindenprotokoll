@@ -594,6 +594,7 @@ def get_stats_data(person_id=None, period_days=90):
         ).fetchall()
         people_data = [dict(r) for r in people]
 
+
         # --- Electricity readings (all time, sorted asc for delta calculation) ---
         elec_rows = conn.execute("""
             SELECT e.date, e.entry_id,
@@ -604,16 +605,7 @@ def get_stats_data(person_id=None, period_days=90):
         """).fetchall()
         electricity_data = [dict(r) for r in elec_rows]
 
-    return {
-        "abdominal": abdominal_data,
-        "meals": meal_data,
-        "top_suspect_foods": top_suspect_foods,
-        "people": people_data,
-        "electricity": electricity_data,
-    }
-
-    # Water and fuel fetched separately (no person filter needed)
-    with connect() as conn:
+        # --- Water readings ---
         water_rows = conn.execute("""
             SELECT e.date, e.entry_id, w.water_meter_m3, w.notes
             FROM entries e
@@ -622,6 +614,7 @@ def get_stats_data(person_id=None, period_days=90):
         """).fetchall()
         water_data = [dict(r) for r in water_rows]
 
+        # --- Fuel entries ---
         fuel_rows = conn.execute("""
             SELECT e.date, e.entry_id,
                    f.vehicle, f.odometer_km, f.total_price_eur,

@@ -183,7 +183,13 @@ function saveState() {
   try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch(e){}
 }
 function loadState() {
-  try { return JSON.parse(localStorage.getItem(LS_KEY)||'{}'); } catch(e){ return {}; }
+  try {
+    const s = JSON.parse(localStorage.getItem(LS_KEY)||'{}');
+    // Version check: if saved state has old period values for water/fuel, reset them
+    if(s.waterPeriod==='365'||s.waterPeriod==='90'||s.waterPeriod==='180') s.waterPeriod='0';
+    if(s.fuelPeriod==='365'||s.fuelPeriod==='180'||s.fuelPeriod==='730') s.fuelPeriod='0';
+    return s;
+  } catch(e){ return {}; }
 }
 
 // ==================== TAB SWITCHING ====================
@@ -199,9 +205,12 @@ function switchTab(name, btn) {
   else document.querySelector(`[data-tab="${name}"]`)?.classList.add('active');
   currentTab = name;
   saveState();
-  if(name==='strom')  renderElec();
-  if(name==='wasser') renderWater();
-  if(name==='fuel')   renderFuel();
+  // Use requestAnimationFrame to ensure panel is visible before Chart.js renders
+  requestAnimationFrame(() => {
+    if(name==='strom')  renderElec();
+    if(name==='wasser') renderWater();
+    if(name==='fuel')   renderFuel();
+  });
 }
 
 // ==================== SHARED HELPERS ====================
@@ -256,7 +265,11 @@ function computeDeltas(data, dateKey, valueKey) {
 
 function makeTimeChart(canvasId, datasets, yLabel, tooltipSuffix='') {
   destroyChart(canvasId);
+  // Determine top-level type: use 'bar' if any dataset is bar, else 'line'
+  const topType = datasets.some(d=>d.type==='bar') ? 'bar' : 'line';
+  // Remove type from individual datasets if all same, keep for mixed
   charts[canvasId] = new Chart(document.getElementById(canvasId).getContext('2d'),{
+    type: topType,
     data:{datasets},
     options:{
       interaction:{mode:'index',intersect:false},
@@ -608,13 +621,13 @@ function renderFuel(){
       tension:0.4,fill:true,type:'line',pointRadius:5};
   }).filter(d=>d.data.length), 'L/Tag');
 
-  // Graph 7: l/100km (liters per fill / km since last odometer)
-  makeFuelChart('Verbrauch l/100km', VEHICLES.map((v,ci)=>{
-    const d=litersPer100km(byVehicle[v]);
-    return{label:v,data:d.map(r=>({x:r.date,y:r.val})),_rows:d,
+  // Graph 7: Literpreis (direct value per fill-up)
+  makeFuelChart('Kraftstoffpreis (€/L)', VEHICLES.map((v,ci)=>{
+    const pts=byVehicle[v].filter(r=>r.price_per_liter!=null).map(r=>({x:r.date,y:r.price_per_liter}));
+    return{label:v,data:pts,
       borderColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length],backgroundColor:VEHICLE_COLORS[ci%VEHICLE_COLORS.length]+'33',
-      tension:0.4,fill:false,type:'line',pointRadius:5};
-  }).filter(d=>d.data.length), 'l/100km');
+      tension:0.3,fill:false,type:'line',pointRadius:6};
+  }).filter(d=>d.data.length), '€/L');
 }
 
 // ==================== INIT: RESTORE STATE ====================
@@ -628,14 +641,16 @@ function renderFuel(){
   if(s.elecFrom)  document.getElementById('elec-from').value=s.elecFrom;
   if(s.elecTo)    document.getElementById('elec-to').value=s.elecTo;
   if(s.elecPeriod==='custom'){document.getElementById('elec-custom-from-wrap').style.display='';document.getElementById('elec-custom-to-wrap').style.display='';}
-  if(s.waterPeriod)document.getElementById('water-period').value=s.waterPeriod;
+  // Water: restore only custom range, keep 'Alle' as default for period
+  if(s.waterPeriod&&s.waterPeriod!=='0'&&s.waterPeriod!=='365'&&s.waterPeriod!=='180'&&s.waterPeriod!=='90')document.getElementById('water-period').value=s.waterPeriod;
   if(s.waterFrom) document.getElementById('water-from').value=s.waterFrom;
   if(s.waterTo)   document.getElementById('water-to').value=s.waterTo;
-  if(s.waterPeriod==='custom'){document.getElementById('water-custom-from-wrap').style.display='';document.getElementById('water-custom-to-wrap').style.display='';}
-  if(s.fuelPeriod)document.getElementById('fuel-period').value=s.fuelPeriod;
+  if(document.getElementById('water-period').value==='custom'){document.getElementById('water-custom-from-wrap').style.display='';document.getElementById('water-custom-to-wrap').style.display='';}
+  // Fuel: restore only custom range, keep 'Alle' as default for period
+  if(s.fuelPeriod&&s.fuelPeriod!=='0'&&s.fuelPeriod!=='365'&&s.fuelPeriod!=='180'&&s.fuelPeriod!=='730')document.getElementById('fuel-period').value=s.fuelPeriod;
   if(s.fuelFrom)  document.getElementById('fuel-from').value=s.fuelFrom;
   if(s.fuelTo)    document.getElementById('fuel-to').value=s.fuelTo;
-  if(s.fuelPeriod==='custom'){document.getElementById('fuel-custom-from-wrap').style.display='';document.getElementById('fuel-custom-to-wrap').style.display='';}
+  if(document.getElementById('fuel-period').value==='custom'){document.getElementById('fuel-custom-from-wrap').style.display='';document.getElementById('fuel-custom-to-wrap').style.display='';}
   // Also re-filter with restored values
   elecFiltered=filterWithOneBefore(ALL_ELEC,'date',document.getElementById('elec-period').value,document.getElementById('elec-from').value,document.getElementById('elec-to').value);
   waterFiltered=filterWithOneBefore(ALL_WATER,'date',document.getElementById('water-period').value,document.getElementById('water-from').value,document.getElementById('water-to').value);

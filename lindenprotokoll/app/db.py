@@ -1030,3 +1030,219 @@ def import_rows(kind, rows, device_type="import", ua="csv import"):
             save_fuel(row["date"], row["time"], row["vehicle"], row["odometer_km"], row["total_price_eur"], row["liters"], row["price_per_liter"], row["notes"], device_type, ua)
         created += 1
     return created
+
+
+def build_regression_dataset(person_id=None, hours_before=24, exclude_empty_days=True):
+    """
+    Build a dataset for logistic regression:
+    Y = 1 if abdominal pain event, 0 if no-pain day (with meal data).
+    X = binary food variables: 1 if that food was eaten within `hours_before` hours before the event.
+
+    Multiple pain events on the same day each get their own row with their own lookback window.
+    No-pain days: days with at least one meal entry (if exclude_empty_days=True).
+    """
+    import datetime as dt
+
+    with connect() as conn:
+        # Person filter
+        person_clause = "AND e.person_id = ?" if person_id else ""
+        person_args = [person_id] if person_id else []
+
+        # All abdominal pain events (date + time for precise lookback)
+        pain_rows = conn.execute(f"""
+            SELECT e.entry_id, e.date, e.time, e.person_id
+            FROM entries e
+            WHERE e.subtype = 'abdominal_pain' {person_clause}
+            ORDER BY e.date, e.time
+        """, person_args).fetchall()
+
+        # All meal entries with foods
+        meal_rows = conn.execute(f"""
+            SELECT e.entry_id, e.date, e.time, e.person_id,
+                   f.food_name
+            FROM entries e
+            JOIN meal_food_links l ON e.entry_id = l.entry_id
+            JOIN food_items_master f ON l.food_id = f.food_id
+            WHERE e.subtype = 'meal' {person_clause}
+            ORDER BY e.date, e.time
+        """, person_args).fetchall()
+
+        # All distinct food names
+        all_foods_rows = conn.execute(f"""
+            SELECT DISTINCT f.food_name
+            FROM entries e
+            JOIN meal_food_links l ON e.entry_id = l.entry_id
+            JOIN food_items_master f ON l.food_id = f.food_id
+            WHERE e.subtype = 'meal' {person_clause}
+            ORDER BY f.food_name COLLATE NOCASE
+        """, person_args).fetchall()
+
+    all_foods = [r["food_name"] for r in all_foods_rows]
+
+    # Build meal lookup: datetime -> set of food names
+    # Also track which dates have any meal
+    meal_events = []  # list of (datetime, food_name, person_id)
+    dates_with_meals = set()
+    for r in meal_rows:
+        try:
+            meal_dt = dt.datetime.fromisoformat(f"{r['date']}T{r['time']}")
+            meal_events.append((meal_dt, r["food_name"], r["person_id"]))
+            dates_with_meals.add(r["date"])
+        except Exception:
+            pass
+
+    # Pain events set (date strings)
+    pain_dates = set(r["date"] for r in pain_rows)
+
+    def foods_in_window(event_dt, pid):
+        """Return set of food names eaten within hours_before hours before event_dt."""
+        cutoff = event_dt - dt.timedelta(hours=hours_before)
+        foods = set()
+        for (meal_dt, food_name, meal_pid) in meal_events:
+            if person_id and meal_pid != pid:
+                continue
+            if cutoff <= meal_dt <= event_dt:
+                foods.add(food_name)
+        return foods
+
+    dataset = []
+
+    # --- PAIN ROWS (Y=1): one row per pain event ---
+    for r in pain_rows:
+        try:
+            event_dt = dt.datetime.fromisoformat(f"{r['date']}T{r['time']}")
+        except Exception:
+            continue
+        foods = foods_in_window(event_dt, r["person_id"])
+        row = {"y": 1, "date": r["date"], "time": r["time"]}
+        for food in all_foods:
+            row[food] = 1 if food in foods else 0
+        dataset.append(row)
+
+    # --- NO-PAIN ROWS (Y=0): one row per no-pain day with meals ---
+    for date_str in sorted(dates_with_meals):
+        if date_str in pain_dates:
+            continue  # skip days that had any pain event
+        # Use end-of-day as the reference point for the food window
+        try:
+            event_dt = dt.datetime.fromisoformat(f"{date_str}T23:59:00")
+        except Exception:
+            continue
+        # Determine person_id for meal lookup
+        pid = person_id  # may be None (all persons)
+        foods = foods_in_window(event_dt, pid)
+        if exclude_empty_days and not foods:
+            continue  # no food in window -> skip (ambiguous)
+        row = {"y": 0, "date": date_str, "time": "23:59"}
+        for food in all_foods:
+            row[food] = 1 if food in foods else 0
+        dataset.append(row)
+
+    return {
+        "dataset": dataset,
+        "foods": all_foods,
+        "n_pain": sum(1 for r in dataset if r["y"] == 1),
+        "n_no_pain": sum(1 for r in dataset if r["y"] == 0),
+        "hours_before": hours_before,
+        "person_id": person_id,
+        "exclude_empty_days": exclude_empty_days,
+    }
+
+
+def run_logistic_regression(dataset_info):
+    """
+    Run logistic regression on the prepared dataset.
+    Returns results dict with coefficients, p-values, odds ratios, pseudo-R2 etc.
+    """
+    import numpy as np
+
+    dataset = dataset_info["dataset"]
+    foods = dataset_info["foods"]
+
+    if len(dataset) < 5:
+        return {"error": f"Zu wenige Beobachtungen ({len(dataset)}). Mindestens 5 benötigt."}
+
+    y = np.array([r["y"] for r in dataset], dtype=float)
+    n_pain = int(y.sum())
+    n_no_pain = int(len(y) - n_pain)
+
+    if n_pain == 0 or n_no_pain == 0:
+        return {"error": "Nur eine Klasse vorhanden (nur Schmerzen oder nur keine Schmerzen)."}
+
+    # Remove food variables with zero variance (always 0 or always 1)
+    valid_foods = []
+    for food in foods:
+        col = np.array([r[food] for r in dataset], dtype=float)
+        if col.std() > 0:
+            valid_foods.append(food)
+
+    if not valid_foods:
+        return {"error": "Keine Lebensmittelvariablen mit ausreichender Varianz gefunden."}
+
+    X = np.column_stack([np.array([r[f] for r in dataset], dtype=float) for f in valid_foods])
+
+    try:
+        import statsmodels.api as sm
+        X_const = sm.add_constant(X, has_constant='add')
+        model = sm.Logit(y, X_const)
+        result = model.fit(disp=0, maxiter=100)
+
+        # McFadden's pseudo-R²
+        pseudo_r2 = result.prsquared
+
+        # Build results table (skip intercept at index 0)
+        variables = []
+        for i, food in enumerate(valid_foods):
+            coef = float(result.params[i + 1])
+            pval = float(result.pvalues[i + 1])
+            odds_ratio = float(np.exp(coef))
+            # Confidence interval for odds ratio
+            ci_low = float(np.exp(result.conf_int()[i + 1][0]))
+            ci_high = float(np.exp(result.conf_int()[i + 1][1]))
+            # Significance stars
+            if pval < 0.001:
+                stars = "***"
+            elif pval < 0.01:
+                stars = "**"
+            elif pval < 0.05:
+                stars = "*"
+            elif pval < 0.1:
+                stars = "."
+            else:
+                stars = ""
+            variables.append({
+                "food": food,
+                "coef": round(coef, 4),
+                "odds_ratio": round(odds_ratio, 4),
+                "ci_low": round(ci_low, 4),
+                "ci_high": round(ci_high, 4),
+                "p_value": round(pval, 4),
+                "stars": stars,
+            })
+
+        # Sort by p-value ascending
+        variables.sort(key=lambda x: x["p_value"])
+
+        # Intercept
+        intercept_coef = float(result.params[0])
+        intercept_pval = float(result.pvalues[0])
+
+        return {
+            "ok": True,
+            "n": len(dataset),
+            "n_pain": n_pain,
+            "n_no_pain": n_no_pain,
+            "n_variables": len(valid_foods),
+            "pseudo_r2": round(pseudo_r2, 4),
+            "log_likelihood": round(float(result.llf), 4),
+            "aic": round(float(result.aic), 4),
+            "bic": round(float(result.bic), 4),
+            "intercept_coef": round(intercept_coef, 4),
+            "intercept_pval": round(intercept_pval, 4),
+            "variables": variables,
+            "converged": bool(result.mle_retvals.get("converged", True)),
+            "warnings": [] if result.mle_retvals.get("converged", True) else ["Modell hat nicht konvergiert – Ergebnisse mit Vorsicht interpretieren."],
+        }
+
+    except Exception as e:
+        return {"error": f"Regressionsfehler: {str(e)}"}

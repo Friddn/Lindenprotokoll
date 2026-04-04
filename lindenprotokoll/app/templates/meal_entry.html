@@ -1,15 +1,113 @@
 {% extends "base.html" %}{% block content %}
-<div class="card"><h2>Protokoll Essen</h2><p class="muted">Sortierung: {{ "Alphabetisch" if food_sort_mode == "alpha" else "Häufigste zuerst" }}</p>
-<form method="post" action="{{ url_for('meal_save') }}">
-<label>Suche</label><input id="food-search" type="text" placeholder="Eintrag suchen...">
-<div class="list">{% for item in food_items %}<label class="option food-option" data-name="{{ item.food_name|lower }}"><input type="checkbox" name="food_ids" value="{{ item.food_id }}"><span>{{ item.food_name }}</span></label>{% endfor %}</div>
-<label>Datum</label><input type="date" name="date" value="{{ date_value }}" required>
-<label>Uhrzeit</label><input type="time" name="time" value="{{ time_value }}" required>
-<button class="big-button" type="submit">Speichern</button></form><hr>
-<form method="post"><label>Neues Essen hinzufügen</label><input type="text" name="new_food_name" placeholder="Neuer Eintrag"><button class="secondary-button" type="submit">Hinzufügen</button></form>
+<div class="card">
+  <h2>Protokoll Essen</h2>
+  <p class="muted">Sortierung: {{ "Alphabetisch" if food_sort_mode == "alpha" else "Häufigste zuerst" }}</p>
+  <form method="post" action="{{ url_for('meal_save') }}" id="meal-form">
+    <label>Suche</label>
+    <input id="food-search" type="text" placeholder="Eintrag suchen..." autocomplete="off">
+
+    <div class="list" id="food-list">
+      {% for item in food_items %}
+      <label class="option food-option" data-name="{{ item.food_name|lower }}">
+        <input type="checkbox" name="food_ids" value="{{ item.food_id }}">
+        <span>{{ item.food_name }}</span>
+      </label>
+      {% endfor %}
+    </div>
+
+    <!-- Inline add-new food while keeping selections -->
+    <div style="display:flex;gap:.5rem;align-items:center;margin:.75rem 0 1rem;">
+      <input type="text" id="new-food-input" placeholder="Neues Essen hinzufügen…"
+             style="flex:1;" autocomplete="off"
+             onkeydown="if(event.key==='Enter'){event.preventDefault();addFoodInline();}">
+      <button type="button" class="secondary-button" onclick="addFoodInline()" style="white-space:nowrap;">
+        + Hinzufügen
+      </button>
+    </div>
+    <div id="new-food-msg" style="font-size:.85rem;margin-bottom:.5rem;display:none;"></div>
+
+    <label>Datum</label>
+    <input type="date" name="date" value="{{ date_value }}" required>
+    <label>Uhrzeit</label>
+    <input type="time" name="time" value="{{ time_value }}" required>
+    <button class="big-button" type="submit">Speichern</button>
+  </form>
 </div>
+
 <script>
-document.addEventListener("DOMContentLoaded", ()=>{ const s=document.getElementById("food-search"); if(!s) return;
-s.addEventListener("input", ()=>{ const q=s.value.trim().toLowerCase(); document.querySelectorAll(".food-option").forEach(r=>r.style.display=(r.dataset.name||"").includes(q)?"flex":"none");});});
+// Search filter
+document.getElementById("food-search").addEventListener("input", function() {
+  const q = this.value.trim().toLowerCase();
+  document.querySelectorAll(".food-option").forEach(r => {
+    r.style.display = (r.dataset.name || "").includes(q) ? "flex" : "none";
+  });
+});
+
+async function addFoodInline() {
+  const input = document.getElementById("new-food-input");
+  const msg   = document.getElementById("new-food-msg");
+  const name  = input.value.trim();
+  if (!name) return;
+
+  msg.style.display = "none";
+
+  try {
+    const resp = await fetch("{{ url_for('meal_add_food_ajax') }}", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({name})
+    });
+    const data = await resp.json();
+
+    if (!data.ok) {
+      msg.textContent = "⚠ " + (data.error || "Fehler");
+      msg.style.color = "#ef4444";
+      msg.style.display = "";
+      return;
+    }
+
+    // Check if this item already exists in the list
+    const existing = document.querySelector(`input[name="food_ids"][value="${data.food_id}"]`);
+    if (existing) {
+      // Just check it and scroll to it
+      existing.checked = true;
+      existing.closest(".food-option").scrollIntoView({behavior: "smooth", block: "nearest"});
+      msg.textContent = `✓ "${data.food_name}" bereits vorhanden – ausgewählt.`;
+      msg.style.color = "#10b981";
+      msg.style.display = "";
+    } else {
+      // Insert new checkbox at the top of the list, pre-checked
+      const list  = document.getElementById("food-list");
+      const label = document.createElement("label");
+      label.className = "option food-option";
+      label.dataset.name = data.food_name.toLowerCase();
+      label.innerHTML =
+        `<input type="checkbox" name="food_ids" value="${data.food_id}" checked>` +
+        `<span>${data.food_name}</span>`;
+      list.prepend(label);
+      label.scrollIntoView({behavior: "smooth", block: "nearest"});
+      msg.textContent = `✓ "${data.food_name}" hinzugefügt und ausgewählt.`;
+      msg.style.color = "#10b981";
+      msg.style.display = "";
+    }
+
+    input.value = "";
+    // Re-apply search filter to include new item
+    const q = document.getElementById("food-search").value.trim().toLowerCase();
+    if (q) {
+      document.querySelectorAll(".food-option").forEach(r => {
+        r.style.display = (r.dataset.name || "").includes(q) ? "flex" : "none";
+      });
+    }
+
+    // Auto-hide success message after 3s
+    setTimeout(() => { msg.style.display = "none"; }, 3000);
+
+  } catch(e) {
+    msg.textContent = "⚠ Netzwerkfehler.";
+    msg.style.color = "#ef4444";
+    msg.style.display = "";
+  }
+}
 </script>
 {% endblock %}

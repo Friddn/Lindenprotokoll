@@ -1,9 +1,113 @@
 {% extends "base.html" %}{% block content %}
-<div class="card"><h2>Essen bearbeiten</h2>
-<form method="post">
-<label>Person</label><select name="person_id">{% for p in people %}<option value="{{ p.person_id }}" {% if details.entry.person_id == p.person_id %}selected{% endif %}>{{ p.display_name }}</option>{% endfor %}</select>
-<div class="list">{% for item in food_items %}<label class="option"><input type="checkbox" name="food_ids" value="{{ item.food_id }}" {% if item.food_id in selected_food_ids %}checked{% endif %}><span>{{ item.food_name }}</span></label>{% endfor %}</div>
-<label>Datum</label><input type="date" name="date" value="{{ details.entry.date }}" required>
-<label>Uhrzeit</label><input type="time" name="time" value="{{ details.entry.time }}" required>
-<button class="big-button" type="submit">Aktualisieren</button>
-</form></div>{% endblock %}
+<div class="card">
+  <h2>Essen bearbeiten</h2>
+  <form method="post">
+    <label>Person</label>
+    <select name="person_id">
+      {% for p in people %}
+      <option value="{{ p.person_id }}" {% if details.entry.person_id == p.person_id %}selected{% endif %}>{{ p.display_name }}</option>
+      {% endfor %}
+    </select>
+
+    <label>Suche</label>
+    <input id="food-search" type="text" placeholder="Eintrag suchen…" autocomplete="off">
+
+    <div class="list" id="food-list">
+      {% for item in food_items %}
+      <label class="option food-option" data-name="{{ item.food_name|lower }}">
+        <input type="checkbox" name="food_ids" value="{{ item.food_id }}"
+               {% if item.food_id in selected_food_ids %}checked{% endif %}>
+        <span>{{ item.food_name }}</span>
+      </label>
+      {% endfor %}
+    </div>
+
+    <!-- Inline add-new food while keeping selections -->
+    <div style="display:flex;gap:.5rem;align-items:center;margin:.75rem 0 1rem;">
+      <input type="text" id="new-food-input" placeholder="Neues Essen hinzufügen…"
+             style="flex:1;" autocomplete="off"
+             onkeydown="if(event.key==='Enter'){event.preventDefault();addFoodInline();}">
+      <button type="button" class="secondary-button" onclick="addFoodInline()" style="white-space:nowrap;">
+        + Hinzufügen
+      </button>
+    </div>
+    <div id="new-food-msg" style="font-size:.85rem;margin-bottom:.5rem;display:none;"></div>
+
+    <label>Datum</label>
+    <input type="date" name="date" value="{{ details.entry.date }}" required>
+    <label>Uhrzeit</label>
+    <input type="time" name="time" value="{{ details.entry.time }}" required>
+    <button class="big-button" type="submit">Aktualisieren</button>
+  </form>
+</div>
+
+<script>
+document.getElementById("food-search").addEventListener("input", function() {
+  const q = this.value.trim().toLowerCase();
+  document.querySelectorAll(".food-option").forEach(r => {
+    r.style.display = (r.dataset.name || "").includes(q) ? "flex" : "none";
+  });
+});
+
+async function addFoodInline() {
+  const input = document.getElementById("new-food-input");
+  const msg   = document.getElementById("new-food-msg");
+  const name  = input.value.trim();
+  if (!name) return;
+
+  msg.style.display = "none";
+
+  try {
+    const resp = await fetch("{{ url_for('meal_add_food_ajax') }}", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({name})
+    });
+    const data = await resp.json();
+
+    if (!data.ok) {
+      msg.textContent = "⚠ " + (data.error || "Fehler");
+      msg.style.color = "#ef4444";
+      msg.style.display = "";
+      return;
+    }
+
+    const existing = document.querySelector(`input[name="food_ids"][value="${data.food_id}"]`);
+    if (existing) {
+      existing.checked = true;
+      existing.closest(".food-option").scrollIntoView({behavior: "smooth", block: "nearest"});
+      msg.textContent = `✓ "${data.food_name}" bereits vorhanden – ausgewählt.`;
+      msg.style.color = "#10b981";
+      msg.style.display = "";
+    } else {
+      const list  = document.getElementById("food-list");
+      const label = document.createElement("label");
+      label.className = "option food-option";
+      label.dataset.name = data.food_name.toLowerCase();
+      label.innerHTML =
+        `<input type="checkbox" name="food_ids" value="${data.food_id}" checked>` +
+        `<span>${data.food_name}</span>`;
+      list.prepend(label);
+      label.scrollIntoView({behavior: "smooth", block: "nearest"});
+      msg.textContent = `✓ "${data.food_name}" hinzugefügt und ausgewählt.`;
+      msg.style.color = "#10b981";
+      msg.style.display = "";
+    }
+
+    input.value = "";
+    const q = document.getElementById("food-search").value.trim().toLowerCase();
+    if (q) {
+      document.querySelectorAll(".food-option").forEach(r => {
+        r.style.display = (r.dataset.name || "").includes(q) ? "flex" : "none";
+      });
+    }
+    setTimeout(() => { msg.style.display = "none"; }, 3000);
+
+  } catch(e) {
+    msg.textContent = "⚠ Netzwerkfehler.";
+    msg.style.color = "#ef4444";
+    msg.style.display = "";
+  }
+}
+</script>
+{% endblock %}

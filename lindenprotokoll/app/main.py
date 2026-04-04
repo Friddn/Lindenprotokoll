@@ -70,6 +70,20 @@ def meal_entry():
                            date_value=session.get("date") or now_date_time()[0], time_value=session.get("time") or now_date_time()[1],
                            **base_context())
 
+@app.post("/meal/add_food_ajax")
+def meal_add_food_ajax():
+    import json
+    name = request.json.get("name", "").strip() if request.is_json else request.form.get("name", "").strip()
+    if not name:
+        return json.dumps({"ok": False, "error": "Kein Name angegeben."}), 400, {"Content-Type": "application/json"}
+    ok, msg = add_food_item(name)
+    # Fetch the new/existing item to get its id
+    with connect() as conn:
+        row = conn.execute("SELECT food_id, food_name FROM food_items_master WHERE lower(food_name)=lower(?)", (name,)).fetchone()
+    if row:
+        return json.dumps({"ok": True, "food_id": row["food_id"], "food_name": row["food_name"]}), 200, {"Content-Type": "application/json"}
+    return json.dumps({"ok": False, "error": msg}), 400, {"Content-Type": "application/json"}
+
 @app.post("/meal/save")
 def meal_save():
     dev, ua = current_device_meta()
@@ -451,44 +465,6 @@ def statistik():
         selected_period=period_days,
         show_pain_free=show_pain_free,
         **base_context())
-
-@app.route("/statistik/regression/dataset", methods=["POST"])
-def regression_dataset():
-    import json
-    person_id = request.json.get("person_id") or None
-    if person_id:
-        person_id = int(person_id)
-    hours_before = int(request.json.get("hours_before", 24))
-    exclude_empty = bool(request.json.get("exclude_empty_days", True))
-    result = build_regression_dataset(
-        person_id=person_id,
-        hours_before=hours_before,
-        exclude_empty_days=exclude_empty,
-    )
-    # Don't send full dataset to client, just summary
-    return json.dumps({
-        "n_pain": result["n_pain"],
-        "n_no_pain": result["n_no_pain"],
-        "n_total": len(result["dataset"]),
-        "foods": result["foods"],
-        "hours_before": result["hours_before"],
-    }, ensure_ascii=False), 200, {"Content-Type": "application/json"}
-
-@app.route("/statistik/regression/run", methods=["POST"])
-def regression_run():
-    import json
-    person_id = request.json.get("person_id") or None
-    if person_id:
-        person_id = int(person_id)
-    hours_before = int(request.json.get("hours_before", 24))
-    exclude_empty = bool(request.json.get("exclude_empty_days", True))
-    dataset_info = build_regression_dataset(
-        person_id=person_id,
-        hours_before=hours_before,
-        exclude_empty_days=exclude_empty,
-    )
-    result = run_logistic_regression(dataset_info)
-    return json.dumps(result, ensure_ascii=False), 200, {"Content-Type": "application/json"}
 
 @app.route("/export/all.csv")
 def export_all(): return csv_resp(export_entries_csv(), f"lindenprotokoll_all_{datetime.now(APP_TZ).strftime('%Y-%m-%d_%H-%M-%S')}.csv")

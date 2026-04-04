@@ -1,8 +1,7 @@
 ARG BUILD_FROM
 FROM $BUILD_FROM
 
-# Install Python, build tools for compiling statsmodels, and pre-built scipy/numpy from apk
-RUN apk add --no-cache python3 py3-pip tzdata gcc musl-dev python3-dev py3-numpy py3-scipy
+RUN apk add --no-cache python3 py3-pip tzdata
 ENV TZ=Europe/Berlin
 WORKDIR /app
 COPY requirements.txt /app/requirements.txt

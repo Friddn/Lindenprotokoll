@@ -1030,3 +1030,249 @@ def import_rows(kind, rows, device_type="import", ua="csv import"):
             save_fuel(row["date"], row["time"], row["vehicle"], row["odometer_km"], row["total_price_eur"], row["liters"], row["price_per_liter"], row["notes"], device_type, ua)
         created += 1
     return created
+
+
+def build_regression_dataset(person_id=None, hours_before=24, exclude_empty_days=True):
+    """
+    Build dataset for logistic regression.
+    Y=1 per pain event, Y=0 per no-pain day with meals.
+    X = binary food variables (1 = eaten within hours_before hours before event).
+    """
+    import datetime as dt
+
+    with connect() as conn:
+        person_clause = "AND e.person_id = ?" if person_id else ""
+        person_args = [person_id] if person_id else []
+
+        pain_rows = conn.execute(f"""
+            SELECT e.entry_id, e.date, e.time, e.person_id
+            FROM entries e
+            WHERE e.subtype = 'abdominal_pain' {person_clause}
+            ORDER BY e.date, e.time
+        """, person_args).fetchall()
+
+        meal_rows = conn.execute(f"""
+            SELECT e.entry_id, e.date, e.time, e.person_id, f.food_name
+            FROM entries e
+            JOIN meal_food_links l ON e.entry_id = l.entry_id
+            JOIN food_items_master f ON l.food_id = f.food_id
+            WHERE e.subtype = 'meal' {person_clause}
+            ORDER BY e.date, e.time
+        """, person_args).fetchall()
+
+        all_foods_rows = conn.execute(f"""
+            SELECT DISTINCT f.food_name
+            FROM entries e
+            JOIN meal_food_links l ON e.entry_id = l.entry_id
+            JOIN food_items_master f ON l.food_id = f.food_id
+            WHERE e.subtype = 'meal' {person_clause}
+            ORDER BY f.food_name COLLATE NOCASE
+        """, person_args).fetchall()
+
+    all_foods = [r["food_name"] for r in all_foods_rows]
+
+    meal_events = []
+    dates_with_meals = set()
+    for r in meal_rows:
+        try:
+            meal_dt = dt.datetime.fromisoformat(f"{r['date']}T{r['time']}")
+            meal_events.append((meal_dt, r["food_name"], r["person_id"]))
+            dates_with_meals.add(r["date"])
+        except Exception:
+            pass
+
+    pain_dates = set(r["date"] for r in pain_rows)
+
+    def foods_in_window(event_dt, pid):
+        cutoff = event_dt - dt.timedelta(hours=hours_before)
+        foods = set()
+        for (meal_dt, food_name, meal_pid) in meal_events:
+            if person_id and meal_pid != pid:
+                continue
+            if cutoff <= meal_dt <= event_dt:
+                foods.add(food_name)
+        return foods
+
+    dataset = []
+
+    for r in pain_rows:
+        try:
+            event_dt = dt.datetime.fromisoformat(f"{r['date']}T{r['time']}")
+        except Exception:
+            continue
+        foods = foods_in_window(event_dt, r["person_id"])
+        row = {"y": 1, "date": r["date"], "time": r["time"]}
+        for food in all_foods:
+            row[food] = 1 if food in foods else 0
+        dataset.append(row)
+
+    for date_str in sorted(dates_with_meals):
+        if date_str in pain_dates:
+            continue
+        try:
+            event_dt = dt.datetime.fromisoformat(f"{date_str}T23:59:00")
+        except Exception:
+            continue
+        foods = foods_in_window(event_dt, person_id)
+        if exclude_empty_days and not foods:
+            continue
+        row = {"y": 0, "date": date_str, "time": "23:59"}
+        for food in all_foods:
+            row[food] = 1 if food in foods else 0
+        dataset.append(row)
+
+    return {
+        "dataset": dataset,
+        "foods": all_foods,
+        "n_pain": sum(1 for r in dataset if r["y"] == 1),
+        "n_no_pain": sum(1 for r in dataset if r["y"] == 0),
+        "hours_before": hours_before,
+        "person_id": person_id,
+        "exclude_empty_days": exclude_empty_days,
+    }
+
+
+def run_logistic_regression(dataset_info):
+    """
+    Logistic regression using scipy only (no statsmodels required).
+    Returns coefficients, odds ratios, p-values, pseudo-R2 etc.
+    """
+    import numpy as np
+    from scipy import optimize, stats
+
+    dataset = dataset_info["dataset"]
+    foods = dataset_info["foods"]
+
+    if len(dataset) < 5:
+        return {"error": f"Zu wenige Beobachtungen ({len(dataset)}). Mindestens 5 benötigt."}
+
+    y = np.array([r["y"] for r in dataset], dtype=float)
+    n_pain = int(y.sum())
+    n_no_pain = int(len(y) - n_pain)
+
+    if n_pain == 0 or n_no_pain == 0:
+        return {"error": "Nur eine Klasse vorhanden (nur Schmerzen oder nur keine Schmerzen)."}
+
+    # Remove zero-variance columns
+    valid_foods = [f for f in foods if np.array([r[f] for r in dataset], dtype=float).std() > 0]
+
+    if not valid_foods:
+        return {"error": "Keine Lebensmittelvariablen mit ausreichender Varianz gefunden."}
+
+    X_raw = np.column_stack([np.array([r[f] for r in dataset], dtype=float) for f in valid_foods])
+    # Add intercept column
+    X = np.column_stack([np.ones(len(y)), X_raw])
+    n, p = X.shape
+
+    # --- Logistic regression via scipy minimize ---
+    def neg_log_likelihood(beta):
+        logits = X @ beta
+        # Clip for numerical stability
+        logits = np.clip(logits, -500, 500)
+        log_lik = np.sum(y * logits - np.log(1 + np.exp(logits)))
+        return -log_lik
+
+    def neg_log_likelihood_grad(beta):
+        logits = X @ beta
+        logits = np.clip(logits, -500, 500)
+        probs = 1 / (1 + np.exp(-logits))
+        grad = X.T @ (probs - y)
+        return grad
+
+    beta_init = np.zeros(p)
+    result = optimize.minimize(
+        neg_log_likelihood,
+        beta_init,
+        jac=neg_log_likelihood_grad,
+        method="L-BFGS-B",
+        options={"maxiter": 200, "ftol": 1e-10}
+    )
+
+    if not result.success and result.fun > neg_log_likelihood(beta_init):
+        return {"error": f"Optimierung nicht konvergiert: {result.message}"}
+
+    beta = result.x
+    converged = result.success
+
+    # --- Standard errors via Hessian (observed Fisher information) ---
+    logits = X @ beta
+    logits = np.clip(logits, -500, 500)
+    probs = 1 / (1 + np.exp(-logits))
+    W = probs * (1 - probs)
+    # Information matrix: X^T W X
+    try:
+        info_matrix = X.T @ np.diag(W) @ X
+        cov_matrix = np.linalg.inv(info_matrix)
+        se = np.sqrt(np.maximum(np.diag(cov_matrix), 0))
+    except np.linalg.LinAlgError:
+        return {"error": "Singuläre Informationsmatrix — Modell nicht identifizierbar (zu wenige Daten für die Anzahl Variablen)."}
+
+    # --- z-scores and p-values ---
+    z_scores = beta / (se + 1e-12)
+    p_values = 2 * (1 - stats.norm.cdf(np.abs(z_scores)))
+
+    # --- McFadden pseudo-R2 ---
+    # Null model (intercept only)
+    p_mean = y.mean()
+    if p_mean <= 0 or p_mean >= 1:
+        ll_null = -len(y) * np.log(max(p_mean, 1e-10))
+    else:
+        ll_null = np.sum(y * np.log(p_mean) + (1 - y) * np.log(1 - p_mean))
+    ll_full = -result.fun
+    pseudo_r2 = 1 - (ll_full / ll_null) if ll_null != 0 else 0
+
+    # --- AIC / BIC ---
+    aic = 2 * p - 2 * ll_full
+    bic = p * np.log(n) - 2 * ll_full
+
+    # --- 95% confidence intervals for odds ratios ---
+    ci_low  = np.exp(beta - 1.96 * se)
+    ci_high = np.exp(beta + 1.96 * se)
+
+    # --- Build results table (skip intercept at index 0) ---
+    def sig_stars(pv):
+        if pv < 0.001: return "***"
+        if pv < 0.01:  return "**"
+        if pv < 0.05:  return "*"
+        if pv < 0.1:   return "."
+        return ""
+
+    variables = []
+    for i, food in enumerate(valid_foods):
+        idx = i + 1  # skip intercept
+        variables.append({
+            "food":       food,
+            "coef":       round(float(beta[idx]), 4),
+            "odds_ratio": round(float(np.exp(beta[idx])), 4),
+            "ci_low":     round(float(ci_low[idx]), 4),
+            "ci_high":    round(float(ci_high[idx]), 4),
+            "p_value":    round(float(p_values[idx]), 4),
+            "stars":      sig_stars(float(p_values[idx])),
+        })
+
+    variables.sort(key=lambda x: x["p_value"])
+
+    warnings = []
+    if not converged:
+        warnings.append("Optimierung nicht vollständig konvergiert – Ergebnisse mit Vorsicht interpretieren.")
+    if n < 20:
+        warnings.append(f"Kleine Stichprobe (N={n}) – p-Werte und KI sind wenig zuverlässig.")
+    if p > n // 5:
+        warnings.append(f"Viele Variablen ({p-1}) relativ zur Stichprobengröße ({n}) – Überanpassung möglich.")
+
+    return {
+        "ok": True,
+        "n": n,
+        "n_pain": n_pain,
+        "n_no_pain": n_no_pain,
+        "n_variables": len(valid_foods),
+        "pseudo_r2": round(float(pseudo_r2), 4),
+        "log_likelihood": round(float(ll_full), 4),
+        "aic": round(float(aic), 4),
+        "bic": round(float(bic), 4),
+        "intercept_coef": round(float(beta[0]), 4),
+        "intercept_pval": round(float(p_values[0]), 4),
+        "variables": variables,
+        "converged": bool(converged),
+        "warnings": warnings,
+    }

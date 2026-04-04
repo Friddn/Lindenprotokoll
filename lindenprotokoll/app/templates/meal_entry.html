@@ -16,15 +16,15 @@
     </div>
 
     <!-- Inline add-new food while keeping selections -->
-    <div style="display:flex;gap:.5rem;align-items:center;margin:.75rem 0 1rem;">
-      <input type="text" id="new-food-input" placeholder="Neues Essen hinzufügen…"
-             style="flex:1;" autocomplete="off"
-             onkeydown="if(event.key==='Enter'){event.preventDefault();addFoodInline();}">
-      <button type="button" class="secondary-button" onclick="addFoodInline()" style="white-space:nowrap;">
-        + Hinzufügen
-      </button>
-    </div>
-    <div id="new-food-msg" style="font-size:.85rem;margin-bottom:.5rem;display:none;"></div>
+    <label style="margin-top:.75rem;">Neues Essen hinzufügen</label>
+    <input type="text" id="new-food-input" placeholder="Name eingeben…"
+           autocomplete="off"
+           onkeydown="if(event.key==='Enter'){event.preventDefault();addFoodInline();}">
+    <button type="button" class="secondary-button" onclick="addFoodInline()"
+            style="margin-bottom:.25rem;">
+      + Hinzufügen
+    </button>
+    <div id="new-food-msg" style="font-size:.85rem;margin-bottom:.75rem;display:none;"></div>
 
     <label>Datum</label>
     <input type="date" name="date" value="{{ date_value }}" required>

@@ -1032,18 +1032,30 @@ def import_rows(kind, rows, device_type="import", ua="csv import"):
     return created
 
 
-def build_regression_dataset(person_id=None, hours_before=24, exclude_empty_days=True):
+def build_regression_dataset(person_id=None, hours_after=4, min_occurrences=2, exclude_empty_days=True):
     """
-    Build dataset for logistic regression.
-    Y=1 per pain event, Y=0 per no-pain day with meals.
-    X = binary food variables (1 = eaten within hours_before hours before event).
+    Event-based logistic regression dataset.
+
+    One row per MEAL ENTRY:
+      Y = 1 if any abdominal pain event occurred within hours_after hours AFTER that meal
+      Y = 0 if no pain occurred within that window
+
+    Food variables are binary: 1 = that food was in this specific meal.
+
+    min_occurrences: minimum number of times a food must appear across all meals
+                     to be included as a variable (filters rare foods).
+    exclude_empty_days: if True, only include no-pain meal entries from days
+                        that have at least one meal (always true per entry, kept
+                        for UI consistency — now controls whether days with meals
+                        but zero qualifying observations are skipped).
     """
     import datetime as dt
 
     with connect() as conn:
         person_clause = "AND e.person_id = ?" if person_id else ""
-        person_args = [person_id] if person_id else []
+        person_args   = [person_id] if person_id else []
 
+        # All pain events with datetime
         pain_rows = conn.execute(f"""
             SELECT e.entry_id, e.date, e.time, e.person_id
             FROM entries e
@@ -1051,84 +1063,85 @@ def build_regression_dataset(person_id=None, hours_before=24, exclude_empty_days
             ORDER BY e.date, e.time
         """, person_args).fetchall()
 
+        # All meal entries with their foods
         meal_rows = conn.execute(f"""
-            SELECT e.entry_id, e.date, e.time, e.person_id, f.food_name
+            SELECT e.entry_id, e.date, e.time, e.person_id,
+                   GROUP_CONCAT(f.food_name, '||') AS foods
             FROM entries e
-            JOIN meal_food_links l ON e.entry_id = l.entry_id
-            JOIN food_items_master f ON l.food_id = f.food_id
+            LEFT JOIN meal_food_links l ON e.entry_id = l.entry_id
+            LEFT JOIN food_items_master f ON l.food_id = f.food_id
             WHERE e.subtype = 'meal' {person_clause}
+            GROUP BY e.entry_id
             ORDER BY e.date, e.time
         """, person_args).fetchall()
 
-        all_foods_rows = conn.execute(f"""
-            SELECT DISTINCT f.food_name
-            FROM entries e
-            JOIN meal_food_links l ON e.entry_id = l.entry_id
-            JOIN food_items_master f ON l.food_id = f.food_id
-            WHERE e.subtype = 'meal' {person_clause}
-            ORDER BY f.food_name COLLATE NOCASE
-        """, person_args).fetchall()
-
-    all_foods = [r["food_name"] for r in all_foods_rows]
-
-    meal_events = []
-    dates_with_meals = set()
-    for r in meal_rows:
+    # Parse pain datetimes
+    pain_events = []
+    for r in pain_rows:
         try:
-            meal_dt = dt.datetime.fromisoformat(f"{r['date']}T{r['time']}")
-            meal_events.append((meal_dt, r["food_name"], r["person_id"]))
-            dates_with_meals.add(r["date"])
+            pain_events.append(dt.datetime.fromisoformat(f"{r['date']}T{r['time']}"))
         except Exception:
             pass
 
-    pain_dates = set(r["date"] for r in pain_rows)
+    # Build dataset: one row per meal entry
+    raw_rows = []
+    food_counts = {}
 
-    def foods_in_window(event_dt, pid):
-        cutoff = event_dt - dt.timedelta(hours=hours_before)
-        foods = set()
-        for (meal_dt, food_name, meal_pid) in meal_events:
-            if person_id and meal_pid != pid:
-                continue
-            if cutoff <= meal_dt <= event_dt:
-                foods.add(food_name)
-        return foods
+    for r in meal_rows:
+        try:
+            meal_dt = dt.datetime.fromisoformat(f"{r['date']}T{r['time']}")
+        except Exception:
+            continue
 
+        foods_in_meal = []
+        if r['foods']:
+            foods_in_meal = [f.strip() for f in r['foods'].split('||') if f.strip()]
+
+        # Y = 1 if any pain within hours_after hours after this meal
+        window_end = meal_dt + dt.timedelta(hours=hours_after)
+        had_pain = any(meal_dt < pe <= window_end for pe in pain_events)
+
+        raw_rows.append({
+            'meal_dt': meal_dt,
+            'date': r['date'],
+            'time': r['time'],
+            'y': 1 if had_pain else 0,
+            'foods': set(foods_in_meal),
+        })
+
+        for food in foods_in_meal:
+            food_counts[food] = food_counts.get(food, 0) + 1
+
+    # Filter foods by minimum occurrences
+    all_foods = sorted(
+        [f for f, cnt in food_counts.items() if cnt >= min_occurrences],
+        key=str.casefold
+    )
+
+    # Build final dataset
     dataset = []
-
-    for r in pain_rows:
-        try:
-            event_dt = dt.datetime.fromisoformat(f"{r['date']}T{r['time']}")
-        except Exception:
-            continue
-        foods = foods_in_window(event_dt, r["person_id"])
-        row = {"y": 1, "date": r["date"], "time": r["time"]}
+    for row in raw_rows:
+        obs = {'y': row['y'], 'date': row['date'], 'time': row['time']}
         for food in all_foods:
-            row[food] = 1 if food in foods else 0
-        dataset.append(row)
+            obs[food] = 1 if food in row['foods'] else 0
+        dataset.append(obs)
 
-    for date_str in sorted(dates_with_meals):
-        if date_str in pain_dates:
-            continue
-        try:
-            event_dt = dt.datetime.fromisoformat(f"{date_str}T23:59:00")
-        except Exception:
-            continue
-        foods = foods_in_window(event_dt, person_id)
-        if exclude_empty_days and not foods:
-            continue
-        row = {"y": 0, "date": date_str, "time": "23:59"}
-        for food in all_foods:
-            row[food] = 1 if food in foods else 0
-        dataset.append(row)
+    n_pain    = sum(1 for r in dataset if r['y'] == 1)
+    n_no_pain = sum(1 for r in dataset if r['y'] == 0)
+
+    # Foods excluded due to rarity
+    excluded = [f for f, cnt in food_counts.items() if cnt < min_occurrences]
 
     return {
-        "dataset": dataset,
-        "foods": all_foods,
-        "n_pain": sum(1 for r in dataset if r["y"] == 1),
-        "n_no_pain": sum(1 for r in dataset if r["y"] == 0),
-        "hours_before": hours_before,
-        "person_id": person_id,
-        "exclude_empty_days": exclude_empty_days,
+        'dataset': dataset,
+        'foods': all_foods,
+        'n_pain': n_pain,
+        'n_no_pain': n_no_pain,
+        'hours_after': hours_after,
+        'min_occurrences': min_occurrences,
+        'person_id': person_id,
+        'excluded_foods': excluded,
+        'n_excluded': len(excluded),
     }
 
 

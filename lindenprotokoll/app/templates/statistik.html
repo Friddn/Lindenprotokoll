@@ -88,15 +88,19 @@ table.data-table td:first-child{text-align:left;}
       Y=1 (Schmerzereignis), Y=0 (schmerzfreier Tag mit Mahlzeiten). Lebensmittel als binäre Variablen.
     </p>
 
+    <p class="muted" style="font-size:.83rem;margin-bottom:.75rem;">
+      Eine Beobachtung = eine Mahlzeit. Y=1 wenn innerhalb von X Stunden danach Bauchschmerzen auftraten, sonst Y=0.
+    </p>
     <div class="filter-row" style="align-items:flex-end;flex-wrap:wrap;gap:.75rem;margin-bottom:.75rem;">
       <div>
-        <label style="font-size:.8rem;color:#666;">Stunden vor Schmerz (X)</label>
-        <input type="number" id="reg-hours" value="24" min="1" max="72" step="1"
+        <label style="font-size:.8rem;color:#666;">Stunden nach Mahlzeit (X)</label>
+        <input type="number" id="reg-hours" value="4" min="1" max="72" step="1"
                style="width:80px;padding:.3rem .5rem;border:1px solid #ccc;border-radius:6px;font-size:.88rem;">
       </div>
-      <div class="checkbox-wrap" style="padding-top:1.1rem;">
-        <input type="checkbox" id="reg-exclude-empty" checked>
-        <label for="reg-exclude-empty" style="padding-top:0;color:#333;font-size:.88rem;">Intervalle ohne Essensdaten ausschließen</label>
+      <div>
+        <label style="font-size:.8rem;color:#666;">Mindest-Häufigkeit pro Lebensmittel</label>
+        <input type="number" id="reg-min-occ" value="2" min="1" max="50" step="1"
+               style="width:70px;padding:.3rem .5rem;border:1px solid #ccc;border-radius:6px;font-size:.88rem;">
       </div>
     </div>
 
@@ -696,9 +700,10 @@ let regressionDatasetReady = false;
 function getRegressionParams() {
   const personSel = document.querySelector('#illness-form select[name="person_id"]');
   return {
-    person_id: personSel ? (personSel.value || null) : null,
-    hours_before: parseInt(document.getElementById('reg-hours').value) || 24,
-    exclude_empty_days: document.getElementById('reg-exclude-empty').checked,
+    person_id:       personSel ? (personSel.value || null) : null,
+    hours_after:     parseInt(document.getElementById('reg-hours').value)   || 4,
+    min_occurrences: parseInt(document.getElementById('reg-min-occ').value) || 2,
+    exclude_empty_days: true,
   };
 }
 
@@ -728,12 +733,15 @@ async function buildRegressionDataset() {
       regressionDatasetReady = false;
     } else {
       infoEl.style.display = '';
+      const excludedNote = data.n_excluded > 0
+        ? ` &nbsp;|&nbsp; <span style="color:#f59e0b">${data.n_excluded} seltene Lebensmittel ausgeschlossen</span>`
+        : '';
       infoEl.innerHTML =
         `<strong>Datensatz aufgebaut</strong> &nbsp;|&nbsp; ` +
-        `${data.n_total} Beobachtungen: ` +
-        `<span style="color:#ef4444;font-weight:600">${data.n_pain} Schmerzereignisse (Y=1)</span>, ` +
-        `<span style="color:#10b981;font-weight:600">${data.n_no_pain} schmerzfreie Tage (Y=0)</span> &nbsp;|&nbsp; ` +
-        `${data.foods.length} Lebensmittelvariablen &nbsp;|&nbsp; Zeitfenster: ${data.hours_before}h<br>` +
+        `${data.n_total} Mahlzeit-Beobachtungen: ` +
+        `<span style="color:#ef4444;font-weight:600">${data.n_pain} mit Schmerzen ≤${data.hours_after}h danach (Y=1)</span>, ` +
+        `<span style="color:#10b981;font-weight:600">${data.n_no_pain} ohne Schmerzen (Y=0)</span> &nbsp;|&nbsp; ` +
+        `${data.foods.length} Lebensmittelvariablen${excludedNote}<br>` +
         `<span style="color:#666;font-size:.8rem">${data.foods.slice(0,20).join(', ')}${data.foods.length > 20 ? ' …' : ''}</span>`;
       regressionDatasetReady = true;
       runBtn.disabled = false;

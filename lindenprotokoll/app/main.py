@@ -472,16 +472,20 @@ def regression_dataset():
     person_id = request.json.get("person_id") or None
     if person_id:
         person_id = int(person_id)
-    hours_before = int(request.json.get("hours_before", 24))
-    exclude_empty = bool(request.json.get("exclude_empty_days", True))
+    hours_after     = int(request.json.get("hours_after", 4))
+    min_occurrences = int(request.json.get("min_occurrences", 2))
+    exclude_empty   = bool(request.json.get("exclude_empty_days", True))
     result = build_regression_dataset(
-        person_id=person_id, hours_before=hours_before, exclude_empty_days=exclude_empty)
+        person_id=person_id, hours_after=hours_after,
+        min_occurrences=min_occurrences, exclude_empty_days=exclude_empty)
     return json.dumps({
-        "n_pain": result["n_pain"],
-        "n_no_pain": result["n_no_pain"],
-        "n_total": len(result["dataset"]),
-        "foods": result["foods"],
-        "hours_before": result["hours_before"],
+        "n_pain":       result["n_pain"],
+        "n_no_pain":    result["n_no_pain"],
+        "n_total":      len(result["dataset"]),
+        "foods":        result["foods"],
+        "hours_after":  result["hours_after"],
+        "n_excluded":   result["n_excluded"],
+        "excluded_foods": result["excluded_foods"][:10],
     }, ensure_ascii=False), 200, {"Content-Type": "application/json"}
 
 @app.route("/statistik/regression/run", methods=["POST"])
@@ -490,10 +494,12 @@ def regression_run():
     person_id = request.json.get("person_id") or None
     if person_id:
         person_id = int(person_id)
-    hours_before = int(request.json.get("hours_before", 24))
-    exclude_empty = bool(request.json.get("exclude_empty_days", True))
+    hours_after     = int(request.json.get("hours_after", 4))
+    min_occurrences = int(request.json.get("min_occurrences", 2))
+    exclude_empty   = bool(request.json.get("exclude_empty_days", True))
     dataset_info = build_regression_dataset(
-        person_id=person_id, hours_before=hours_before, exclude_empty_days=exclude_empty)
+        person_id=person_id, hours_after=hours_after,
+        min_occurrences=min_occurrences, exclude_empty_days=exclude_empty)
     result = run_logistic_regression(dataset_info)
     return json.dumps(result, ensure_ascii=False), 200, {"Content-Type": "application/json"}
 

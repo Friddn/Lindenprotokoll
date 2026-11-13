@@ -8,7 +8,7 @@
   <p class="muted" style="font-size:.85rem;margin-bottom:.75rem;">
     Empfohlen: Bild direkt hier hochladen – wird sicher im Add-on-Datenspeicher abgelegt.
   </p>
-  <form method="post" enctype="multipart/form-data" style="display:flex;flex-direction:column;gap:.75rem;">
+  <form method="post" enctype="multipart/form-data" style="display:flex;flex-direction:column;gap:.75rem;"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
     <input type="file" name="abdominal_image_file" accept="image/png,image/jpeg,image/gif,image/webp">
     <button class="big-button" type="submit" style="align-self:flex-start">Hochladen</button>
   </form>
@@ -24,7 +24,7 @@
     Alternativ eine vollständige URL angeben, z.&nbsp;B.
     <code>http://homeassistant.local:8123/local/Bauchschmerzenapp.png</code>
   </p>
-  <form method="post" style="display:flex;flex-direction:column;gap:.75rem;">
+  <form method="post" style="display:flex;flex-direction:column;gap:.75rem;"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
     <input type="text" name="abdominal_image_url" value="{{ abdominal_image_url if abdominal_image_url != '/abdominal-image' else '' }}" placeholder="http://homeassistant.local:8123/local/bild.png">
     <button class="secondary-button" type="submit" style="align-self:flex-start">URL speichern</button>
   </form>

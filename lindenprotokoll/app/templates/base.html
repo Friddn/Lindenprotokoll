@@ -14,8 +14,11 @@
       <a href="{{ url_for('index') }}">Start</a>
       <a href="{{ url_for('history') }}">Historie</a>
       <a href="{{ url_for('statistik') }}">Statistik</a>
+      <a href="{{ url_for('heatpump_analysis') }}">Wärmepumpe</a>
       <a href="{{ url_for('export_page') }}">Export</a>
       <a href="{{ url_for('verwaltung') }}">Verwaltung</a>
+      <a href="{{ url_for('security_settings') }}">Sicherheit</a>
+      <form method="post" action="{{ url_for('pin_logout') }}" style="display:inline"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><button type="submit" class="nav-button">Abmelden</button></form>
     </nav>
   </header>
   {% with messages = get_flashed_messages(with_categories=true) %}

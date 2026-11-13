@@ -1,5 +1,5 @@
 {% extends "base.html" %}{% block content %}
-<div class="card"><h2>Strom</h2><form method="post">
+<div class="card"><h2>Strom</h2><form method="post"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
 <label>Verbrauch Zählerstand (kWh)</label><input type="number" name="consumption_meter_kwh" min="0" max="999999" step="1">
 <label>Einspeise Zählerstand (kWh)</label><input type="number" name="feedin_meter_kwh" min="0" max="999999" step="1">
 <label>Freitext</label><textarea name="notes" rows="3"></textarea>

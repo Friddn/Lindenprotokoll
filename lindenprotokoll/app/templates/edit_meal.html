@@ -1,7 +1,7 @@
 {% extends "base.html" %}{% block content %}
 <div class="card">
   <h2>Essen bearbeiten</h2>
-  <form method="post">
+  <form method="post"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
     <label>Person</label>
     <select name="person_id">
       {% for p in people %}

@@ -1,5 +1,5 @@
 {% extends "base.html" %}{% block content %}
-<div class="card"><h2>Anderes</h2><form method="post">
+<div class="card"><h2>Anderes</h2><form method="post"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
 <label>Freitext</label><textarea name="notes" rows="5"></textarea>
 <label>Datum</label><input type="date" name="date" value="{{ date_value }}" required>
 <label>Uhrzeit</label><input type="time" name="time" value="{{ time_value }}" required>

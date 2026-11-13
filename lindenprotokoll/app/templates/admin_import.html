@@ -23,7 +23,7 @@ Personen und Essen werden automatisch angelegt wenn sie noch nicht existieren.</
 
 <p><a class="secondary-button link-button" href="{{ url_for('import_template', kind=kind) }}">Vorlage herunterladen</a></p>
 
-<form method="post" enctype="multipart/form-data">
+<form method="post" enctype="multipart/form-data"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
 <input type="hidden" name="kind" value="{{ kind }}">
 <input type="hidden" name="mode" value="preview">
 <label>CSV-Datei auswählen</label>
@@ -66,7 +66,7 @@ Personen und Essen werden automatisch angelegt wenn sie noch nicht existieren.</
 </div>
 
 {% if not errors %}
-<form method="post">
+<form method="post"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
 <input type="hidden" name="kind" value="{{ kind }}">
 <input type="hidden" name="mode" value="commit">
 <button class="big-button" type="submit">{{ preview_rows|length }} Einträge jetzt importieren</button>

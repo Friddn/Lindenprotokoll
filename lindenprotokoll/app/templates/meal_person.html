@@ -1,6 +1,6 @@
 {% extends "base.html" %}{% block content %}
 <div class="card"><h2>Protokoll Essen – Person</h2>
-<form method="post"><div class="list">
+<form method="post"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><div class="list">
 {% for p in people %}
 <label class="option"><input type="radio" name="person_id" value="{{ p.person_id }}" {% if default_person_id == p.person_id %}checked{% endif %} required><span>{{ p.display_name }}</span></label>
 {% endfor %}

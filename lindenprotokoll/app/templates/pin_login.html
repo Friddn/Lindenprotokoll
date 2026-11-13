@@ -1,0 +1,2 @@
+{% extends "base.html" %}{% block content %}
+<div class="card" style="max-width:420px;margin:2rem auto"><h2>PIN erforderlich</h2><p>Bitte die gemeinsame sechsstellige PIN eingeben.</p><form method="post"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><label for="pin">PIN</label><input id="pin" name="pin" type="password" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" minlength="6" autocomplete="current-password" required><button type="submit">Anmelden</button></form></div>{% endblock %}

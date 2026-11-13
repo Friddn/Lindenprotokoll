@@ -2,7 +2,7 @@
 <div class="card">
   <h2>Protokoll Essen</h2>
   <p class="muted">Sortierung: {{ "Alphabetisch" if food_sort_mode == "alpha" else "Häufigste zuerst" }}</p>
-  <form method="post" action="{{ url_for('meal_save') }}" id="meal-form">
+  <form method="post" action="{{ url_for('meal_save') }}" id="meal-form"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
     <label>Suche</label>
     <input id="food-search" type="text" placeholder="Eintrag suchen..." autocomplete="off">
 

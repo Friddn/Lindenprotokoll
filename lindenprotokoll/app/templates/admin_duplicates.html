@@ -25,7 +25,7 @@
 <p class="muted">Keine Duplikate gefunden. ✓</p>
 {% else %}
 <p class="muted">{{ duplicates|length }} Gruppe(n) gefunden. Einträge zum Löschen markieren und bestätigen.</p>
-<form method="post" onsubmit="return confirm('Markierte Einträge wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.')">
+<form method="post" onsubmit="return confirm('Markierte Einträge wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.')"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
 {% for group in duplicates %}
 <div class="card" style="margin-bottom:1rem;border:1px solid var(--color-border,#ddd);padding:1rem;">
   <strong>{{ group.subtype_label }}</strong>

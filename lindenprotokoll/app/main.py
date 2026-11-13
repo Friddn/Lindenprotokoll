@@ -5,8 +5,13 @@ from zoneinfo import ZoneInfo
 APP_TZ = ZoneInfo("Europe/Berlin")
 from io import BytesIO
 import json
-from flask import Flask, flash, redirect, render_template, request, send_file, session, url_for
-import mimetypes, os
+from flask import Flask, flash, redirect, render_template, request, send_file, session, url_for, abort
+import mimetypes, os, csv, sqlite3, secrets, hashlib
+from pathlib import Path
+from werkzeug.utils import secure_filename
+import re
+import urllib.parse, urllib.request
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from config import DEBUG, HOST, PORT, SECRET_KEY
 from db import *
@@ -14,6 +19,38 @@ from device import detect_device_type
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
+app.config.update(
+    MAX_CONTENT_LENGTH=15 * 1024 * 1024,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    PERMANENT_SESSION_LIFETIME=__import__("datetime").timedelta(days=30),
+)
+
+@app.context_processor
+def inject_csrf_token():
+    def csrf_token():
+        token = session.get("_csrf_token")
+        if not token:
+            token = secrets.token_urlsafe(32)
+            session["_csrf_token"] = token
+        return token
+    return {"csrf_token": csrf_token}
+
+@app.before_request
+def protect_post_requests():
+    if request.method != "POST":
+        return None
+    # JSON requests are not submitted by ordinary HTML forms; browsers enforce
+    # a CORS preflight for application/json. Validate Origin whenever supplied.
+    if request.is_json:
+        origin = request.headers.get("Origin")
+        if origin and urllib.parse.urlparse(origin).netloc != request.host:
+            abort(400, description="Ungültiger Request-Ursprung.")
+        return None
+    expected = session.get("_csrf_token")
+    supplied = request.form.get("_csrf_token", "")
+    if not expected or not secrets.compare_digest(expected, supplied):
+        abort(400, description="Sicherheitsprüfung fehlgeschlagen. Bitte Seite neu laden.")
 
 def now_date_time():
     n = datetime.now(APP_TZ)
@@ -32,6 +69,83 @@ def csv_resp(content: str, filename: str):
 @app.before_request
 def setup():
     init_db()
+
+# Shared PIN gate. Static assets and the two PIN endpoints remain accessible.
+_PIN_EXEMPT_ENDPOINTS = {"pin_login", "pin_setup", "static"}
+@app.before_request
+def require_pin():
+    if request.endpoint in _PIN_EXEMPT_ENDPOINTS or request.endpoint is None:
+        return None
+    if not session.get("pin_authenticated"):
+        return redirect(url_for("pin_login", next=request.path))
+    if get_setting("security_pin_change_required", "1") == "1" and request.endpoint != "pin_setup":
+        return redirect(url_for("pin_setup"))
+    return None
+
+@app.route("/pin", methods=["GET", "POST"])
+def pin_login():
+    if session.get("pin_authenticated") and get_setting("security_pin_change_required", "1") != "1":
+        return redirect(url_for("index"))
+    if request.method == "POST":
+        now = int(datetime.now().timestamp())
+        # Store only a keyed hash of the client address, not the raw IP.
+        client_key = hashlib.sha256((SECRET_KEY + ":" + (request.remote_addr or "unknown")).encode("utf-8")).hexdigest()
+        with connect() as conn:
+            state = conn.execute("SELECT failed_attempts, locked_until FROM security_login_attempts WHERE client_key=?", (client_key,)).fetchone()
+            failures = int(state["failed_attempts"] if state else 0)
+            locked_until = int(state["locked_until"] if state else 0)
+            if now < locked_until:
+                flash("Zu viele Fehlversuche. Bitte später erneut versuchen.", "error")
+            else:
+                pin = request.form.get("pin", "")
+                stored = get_setting("security_pin_hash", "")
+                if re.fullmatch(r"\d{6}", pin) and stored and check_password_hash(stored, pin):
+                    conn.execute("INSERT INTO security_login_attempts(client_key,failed_attempts,locked_until) VALUES(?,0,0) ON CONFLICT(client_key) DO UPDATE SET failed_attempts=0,locked_until=0,updated_at=CURRENT_TIMESTAMP", (client_key,))
+                    session.clear()
+                    session["pin_authenticated"] = True
+                    session.permanent = True
+                    if get_setting("security_pin_change_required", "1") == "1":
+                        return redirect(url_for("pin_setup"))
+                    target = request.args.get("next", "")
+                    return redirect(target if target.startswith("/") and not target.startswith("//") else url_for("index"))
+                failures += 1
+                delay = min(300, 30 * max(1, failures - 4)) if failures >= 5 else 0
+                conn.execute("INSERT INTO security_login_attempts(client_key,failed_attempts,locked_until) VALUES(?,?,?) ON CONFLICT(client_key) DO UPDATE SET failed_attempts=excluded.failed_attempts,locked_until=excluded.locked_until,updated_at=CURRENT_TIMESTAMP",
+                             (client_key, failures, now + delay if delay else 0))
+                flash("PIN ist nicht korrekt.", "error")
+    return render_template("pin_login.html", **base_context())
+
+@app.route("/pin/setup", methods=["GET", "POST"])
+def pin_setup():
+    # Initial setup is allowed only while the one-time migration flag is set.
+    # Later PIN changes must go through Settings and require the current PIN.
+    if get_setting("security_pin_change_required", "1") != "1":
+        return redirect(url_for("security_settings"))
+    if not session.get("pin_authenticated"):
+        return redirect(url_for("pin_login"))
+    if request.method == "POST":
+        pin = request.form.get("pin", "")
+        confirm = request.form.get("confirm_pin", "")
+        if not re.fullmatch(r"\d{6}", pin):
+            flash("Die PIN muss genau sechs Ziffern enthalten.", "error")
+        elif pin == "000000":
+            flash("Bitte nicht die Standard-PIN verwenden.", "error")
+        elif pin != confirm:
+            flash("Die PIN-Eingaben stimmen nicht überein.", "error")
+        else:
+            set_setting("security_pin_hash", generate_password_hash(pin))
+            set_setting("security_pin_change_required", "0")
+            session.clear()
+            session["pin_authenticated"] = True
+            session.permanent = True
+            flash("Neue PIN wurde gespeichert.", "success")
+            return redirect(url_for("index"))
+    return render_template("pin_setup.html", **base_context())
+
+@app.post("/pin/logout")
+def pin_logout():
+    session.clear()
+    return redirect(url_for("pin_login"))
 
 @app.route("/")
 def index():
@@ -466,6 +580,233 @@ def statistik():
         show_pain_free=show_pain_free,
         **base_context())
 
+
+
+@app.route("/statistik/waermepumpe", methods=["GET", "POST"])
+def heatpump_analysis():
+    """Local import and review for hourly heat-pump/weather data and graph images."""
+    from db import connect
+    data_dir = Path(os.environ.get("DATA_DIR", "/data"))
+    upload_dir = data_dir / "graph_screenshots"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    message = None
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "fetch_weather":
+            from datetime import date
+            start = request.form.get("start_date", "2025-01-01")
+            end = request.form.get("end_date", date.today().isoformat())
+            # Tornesch, Schleswig-Holstein; Open-Meteo historical archive (ERA5/ERA5-Land).
+            params = urllib.parse.urlencode({"latitude":53.70,"longitude":9.72,"start_date":start,"end_date":end,"hourly":"temperature_2m","timezone":"Europe/Berlin"})
+            try:
+                url = "https://archive-api.open-meteo.com/v1/archive?" + params
+                req = urllib.request.Request(url, headers={"User-Agent":"Lindenprotokoll/1.0"})
+                with urllib.request.urlopen(req, timeout=45) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                times = payload.get("hourly",{}).get("time",[])
+                temps = payload.get("hourly",{}).get("temperature_2m",[])
+                count = 0
+                with connect() as conn:
+                    for ts,temp in zip(times,temps):
+                        if temp is None: continue
+                        conn.execute("INSERT INTO outdoor_hourly(ts,temperature_c,source) VALUES(?,?,'Open-Meteo ERA5') ON CONFLICT(ts) DO UPDATE SET temperature_c=excluded.temperature_c,source=excluded.source", (ts,float(temp)))
+                        count += 1
+                message = f"{count} stündliche Tornesch-Temperaturwerte geladen ({start} bis {end}; Open-Meteo ERA5/ERA5-Land)."
+            except Exception as exc:
+                message = "Wetterdaten konnten nicht geladen werden: " + str(exc)
+        elif action == "ocr_screenshot":
+            # Optional local OCR. Tesseract is not required for the app to run.
+            try:
+                shot_id = int(request.form.get("screenshot_id"))
+                with connect() as conn:
+                    shot = conn.execute("SELECT * FROM graph_screenshots WHERE id=?", (shot_id,)).fetchone()
+                if not shot:
+                    raise ValueError("Screenshot nicht gefunden.")
+                import shutil, subprocess
+                if not shutil.which("tesseract"):
+                    raise RuntimeError("Tesseract OCR ist nicht installiert. Bitte Tageswerte manuell aus dem Screenshot übernehmen.")
+                proc = subprocess.run(["tesseract", shot["stored_path"], "stdout", "-l", "eng+deu", "--psm", "11"],
+                                      capture_output=True, text=True, timeout=30, check=False)
+                if proc.returncode != 0:
+                    raise RuntimeError((proc.stderr or "OCR fehlgeschlagen.")[:300])
+                ocr_text = proc.stdout[:12000]
+                with connect() as conn:
+                    conn.execute("UPDATE graph_screenshots SET ocr_text=? WHERE id=?", (ocr_text, shot_id))
+                message = "OCR-Text wurde lokal erkannt. Bitte Datum und kWh-Zahlen anhand des Originalbildes prüfen und manuell bestätigen."
+            except Exception as exc:
+                message = "OCR nicht verfügbar/fehlgeschlagen: " + str(exc)
+        elif action == "save_daily_screenshot_totals":
+            try:
+                shot_id = int(request.form.get("screenshot_id"))
+                day = request.form.get("daily_date", "").strip()
+                def optional_nonnegative(field):
+                    raw = request.form.get(field, "").strip().replace(",", ".")
+                    if not raw: return None
+                    value = float(raw)
+                    if not __import__("math").isfinite(value) or value < 0:
+                        raise ValueError("Tageswerte müssen gültige, nicht-negative Zahlen sein.")
+                    return value
+                electricity = optional_nonnegative("daily_electricity_kwh")
+                thermal = optional_nonnegative("daily_thermal_kwh")
+                try:
+                    datetime.strptime(day, "%Y-%m-%d")
+                except ValueError:
+                    raise ValueError("Bitte ein gültiges Datum angeben.")
+                if electricity is None and thermal is None:
+                    raise ValueError("Bitte mindestens einen abgelesenen Tageswert eingeben.")
+                with connect() as conn:
+                    shot = conn.execute("SELECT id FROM graph_screenshots WHERE id=?", (shot_id,)).fetchone()
+                    if not shot: raise ValueError("Screenshot nicht gefunden.")
+                    conn.execute("INSERT INTO daily_hp_totals(date,electricity_kwh,thermal_kwh,source,screenshot_id,confidence) VALUES(?,?,?,'screenshot-manual',?,'confirmed') "
+                                 "ON CONFLICT(date) DO UPDATE SET electricity_kwh=excluded.electricity_kwh,thermal_kwh=excluded.thermal_kwh,source=excluded.source,screenshot_id=excluded.screenshot_id,confidence='confirmed',updated_at=CURRENT_TIMESTAMP",
+                                 (day, electricity, thermal, shot_id))
+                    conn.execute("UPDATE graph_screenshots SET graph_date=? WHERE id=?", (day, shot_id))
+                message = f"Bestätigte Tageswerte für {day} gespeichert. Diese Werte sind maßgeblich für die Tagesstatistik."
+            except Exception as exc:
+                message = "Tageswerte konnten nicht gespeichert werden: " + str(exc)
+        elif action == "digitize_screenshot":
+            try:
+                from graph_digitizer import digitize
+                shot_id = int(request.form.get("screenshot_id"))
+                with connect() as conn:
+                    shot = conn.execute("SELECT * FROM graph_screenshots WHERE id=?",(shot_id,)).fetchone()
+                if not shot: raise ValueError("Screenshot nicht gefunden.")
+                date_value = request.form.get("digitize_date") or shot["graph_date"]
+                if not date_value: raise ValueError("Bitte ein Datum für den Screenshot angeben.")
+                bounds = [float(request.form[k]) for k in ("x_left","x_right","y_top","y_bottom","y_min","y_max")]
+                x_left,x_right,y_top,y_bottom,y_min,y_max=bounds
+                total=0; cadences=[]
+                extracted = []
+                for curve in ("green","red"):
+                    pts,cadence=digitize(shot["stored_path"],date_value,x_left,x_right,y_top,y_bottom,y_min,y_max,curve)
+                    if cadence: cadences.append(cadence)
+                    for pt in pts:
+                        extracted.append((shot_id, pt['ts'], pt['value_kw'] if curve=='green' else None,
+                                          pt['value_kw'] if curve=='red' else None, pt['confidence'],
+                                          'estimated-'+curve+'-'+pt.get('point_kind','corner')))
+                    total += len(pts)
+                # Replace this screenshot's prior extraction atomically. Re-running
+                # calibration must never accumulate duplicate candidate points.
+                with connect() as conn:
+                    conn.execute("DELETE FROM hp_graph_points WHERE screenshot_id=?", (shot_id,))
+                    conn.executemany("INSERT INTO hp_graph_points(screenshot_id,ts,electricity_kw,thermal_kw,confidence,point_kind) VALUES(?,?,?,?,?,?)", extracted)
+                    conn.execute("UPDATE graph_screenshots SET status='digitized',graph_date=? WHERE id=?",(date_value,shot_id))
+                cadence_text = f"wiederkehrender Punktabstand etwa {round(sum(cadences)/len(cadences))} Minuten (nur Hinweis)" if cadences else "keine verlässliche Abtastrate erkennbar"
+                message = f"{total} geschätzte Kurvenpunkte erkannt; {cadence_text}. Bitte Werte prüfen; es sind keine Originalmessungen."
+            except Exception as exc:
+                message = "Digitalisierung fehlgeschlagen: " + str(exc)
+        elif action == "upload_screenshots":
+            files = request.files.getlist("screenshots")
+            saved = 0
+            for f in files:
+                if not f or not f.filename: continue
+                name = secure_filename(f.filename)
+                if not name.lower().endswith((".png", ".jpg", ".jpeg", ".webp")): continue
+                date_value = request.form.get("graph_date", "").strip()
+                if date_value:
+                    try: datetime.strptime(date_value, "%Y-%m-%d")
+                    except ValueError: raise ValueError("Ungültiges Screenshot-Datum.")
+                unique = secrets.token_hex(8) + "_" + name
+                path = upload_dir / unique
+                f.save(path)
+                try:
+                    from PIL import Image
+                    with Image.open(path) as image:
+                        if image.width * image.height > 20_000_000:
+                            raise ValueError("Bild ist größer als 20 Megapixel.")
+                        image.verify()
+                except Exception:
+                    path.unlink(missing_ok=True)
+                    raise ValueError(f"{name}: ungültige oder nicht unterstützte Bilddatei.")
+                with connect() as conn:
+                    conn.execute("INSERT INTO graph_screenshots(filename,stored_path,graph_date) VALUES(?,?,?)", (name, str(path), date_value or None))
+                saved += 1
+            message = f"{saved} Screenshot(s) gespeichert. Bitte Datum und Achsenkalibrierung prüfen, bevor Werte übernommen werden."
+        elif action in ("import_hp_csv", "import_weather_csv", "import_daily_csv"):
+            f = request.files.get("csv_file")
+            if not f or not f.filename:
+                message = "Bitte eine CSV-Datei auswählen."
+            else:
+                try:
+                    rows = csv.DictReader(f.stream.read().decode("utf-8-sig").splitlines())
+                    count = 0
+                    with connect() as conn:
+                        for row in rows:
+                            if action == "import_hp_csv":
+                                ts = (row.get("timestamp") or row.get("datetime") or "").strip()
+                                e = row.get("electricity_kwh", "").strip(); th = row.get("thermal_kwh", "").strip()
+                                if not ts: continue
+                                datetime.fromisoformat(ts)
+                                ev = float(e) if e else None; tv = float(th) if th else None
+                                if any(v is not None and (not __import__("math").isfinite(v) or v < 0) for v in (ev,tv)):
+                                    raise ValueError("Energie-Werte müssen endlich und nicht-negativ sein.")
+                                conn.execute("INSERT INTO hp_hourly(ts,electricity_kwh,thermal_kwh,source) VALUES(?,?,?,'csv') ON CONFLICT(ts) DO UPDATE SET electricity_kwh=excluded.electricity_kwh,thermal_kwh=excluded.thermal_kwh,source='csv'", (ts, ev, tv)); count += 1
+                            elif action == "import_weather_csv":
+                                ts = (row.get("timestamp") or row.get("datetime") or "").strip(); temp = row.get("temperature_c", row.get("temperature_2m", "")).strip()
+                                if not ts or not temp: continue
+                                datetime.fromisoformat(ts)
+                                tv = float(temp)
+                                if not __import__("math").isfinite(tv) or tv < -80 or tv > 60: raise ValueError("Ungültige Außentemperatur.")
+                                conn.execute("INSERT INTO outdoor_hourly(ts,temperature_c,source) VALUES(?,?, 'csv') ON CONFLICT(ts) DO UPDATE SET temperature_c=excluded.temperature_c,source='csv'", (ts, tv)); count += 1
+                            else:
+                                day = (row.get("date") or "").strip(); val = row.get("kwh", row.get("consumption_kwh", "")).strip()
+                                if not day or not val: continue
+                                datetime.strptime(day, "%Y-%m-%d")
+                                vv = float(val)
+                                if not __import__("math").isfinite(vv) or vv < 0: raise ValueError("Tagesverbrauch muss endlich und nicht-negativ sein.")
+                                conn.execute("INSERT INTO daily_non_hp_electricity(date,kwh,notes) VALUES(?,?,?) ON CONFLICT(date) DO UPDATE SET kwh=excluded.kwh,notes=excluded.notes", (day, vv, row.get("notes", ""))); count += 1
+                    message = f"{count} Datensätze importiert."
+                except Exception as exc:
+                    message = "CSV konnte nicht importiert werden: " + str(exc)
+    from db import connect
+    with connect() as conn:
+        hp = [dict(r) for r in conn.execute("SELECT * FROM hp_hourly ORDER BY ts DESC LIMIT 500")]
+        weather = [dict(r) for r in conn.execute("SELECT * FROM outdoor_hourly ORDER BY ts DESC LIMIT 500")]
+        daily = [dict(r) for r in conn.execute("SELECT * FROM daily_non_hp_electricity ORDER BY date DESC LIMIT 200")]
+        shots = [dict(r) for r in conn.execute("SELECT * FROM graph_screenshots ORDER BY id DESC")]
+        daily_hp = [dict(r) for r in conn.execute("SELECT * FROM daily_hp_totals ORDER BY date DESC LIMIT 200")]
+        graph_points = [dict(r) for r in conn.execute("SELECT * FROM hp_graph_points ORDER BY ts DESC LIMIT 300")]
+    return render_template("heatpump_analysis.html", hp=hp, weather=weather, daily=daily, shots=shots, daily_hp=daily_hp, graph_points=graph_points, message=message, **base_context())
+
+@app.get("/statistik/waermepumpe/data")
+def heatpump_data():
+    from db import connect
+    with connect() as conn:
+        rows = conn.execute("""SELECT h.ts,h.electricity_kwh,h.thermal_kwh,w.temperature_c
+          FROM hp_hourly h LEFT JOIN outdoor_hourly w ON w.ts=h.ts ORDER BY h.ts""").fetchall()
+        estimates = conn.execute("""SELECT ts, MAX(electricity_kw) AS electricity_kw,
+          MAX(thermal_kw) AS thermal_kw, MAX(confidence) AS confidence
+          FROM hp_graph_points GROUP BY ts ORDER BY ts""").fetchall()
+    return {"data": [dict(r) for r in rows], "estimates": [dict(r) for r in estimates]}
+
+
+@app.get("/statistik/waermepumpe/daily")
+def heatpump_daily_data():
+    from db import connect
+    with connect() as conn:
+        # Confirmed screenshot totals take precedence over sums of hourly/imported data.
+        rows = conn.execute("""
+          SELECT dates.date,
+            COALESCE(t.electricity_kwh, h.hp_kwh) AS hp_kwh,
+            d.kwh AS non_hp_kwh,
+            CASE WHEN COALESCE(t.electricity_kwh, h.hp_kwh) IS NOT NULL AND d.kwh IS NOT NULL
+                 THEN COALESCE(t.electricity_kwh, h.hp_kwh) + d.kwh ELSE NULL END AS total_kwh,
+            t.thermal_kwh AS thermal_kwh,
+            CASE WHEN t.electricity_kwh IS NOT NULL THEN 'screenshot-confirmed'
+                 WHEN h.hp_kwh IS NOT NULL THEN 'hourly-sum' ELSE NULL END AS hp_source
+          FROM (
+            SELECT date FROM daily_non_hp_electricity
+            UNION SELECT date FROM daily_hp_totals
+            UNION SELECT substr(ts,1,10) FROM hp_hourly
+          ) dates
+          LEFT JOIN daily_hp_totals t ON t.date=dates.date
+          LEFT JOIN daily_non_hp_electricity d ON d.date=dates.date
+          LEFT JOIN (SELECT substr(ts,1,10) AS date,SUM(electricity_kwh) AS hp_kwh
+                     FROM hp_hourly GROUP BY substr(ts,1,10)) h ON h.date=dates.date
+          ORDER BY dates.date
+        """).fetchall()
+    return {"data": [dict(r) for r in rows]}
+
 @app.route("/statistik/regression/dataset", methods=["POST"])
 def regression_dataset():
     import json
@@ -514,6 +855,25 @@ def export_consumption(): return csv_resp(export_consumption_csv(), f"lindenprot
 
 @app.route("/verwaltung")
 def verwaltung(): return render_template("admin_index.html", **base_context())
+
+@app.route("/settings/security", methods=["GET", "POST"])
+def security_settings():
+    if request.method == "POST":
+        current = request.form.get("current_pin", "")
+        new_pin = request.form.get("new_pin", "")
+        confirm = request.form.get("confirm_pin", "")
+        stored = get_setting("security_pin_hash", "")
+        if not stored or not check_password_hash(stored, current):
+            flash("Aktuelle PIN ist nicht korrekt.", "error")
+        elif not re.fullmatch(r"\d{6}", new_pin) or new_pin == "000000":
+            flash("Die neue PIN muss sechs Ziffern haben und darf nicht 000000 sein.", "error")
+        elif new_pin != confirm:
+            flash("Die neuen PIN-Eingaben stimmen nicht überein.", "error")
+        else:
+            set_setting("security_pin_hash", generate_password_hash(new_pin))
+            flash("PIN wurde geändert.", "success")
+            return redirect(url_for("security_settings"))
+    return render_template("security_settings.html", **base_context())
 
 @app.route("/admin/duplicates", methods=["GET", "POST"])
 def admin_duplicates():
@@ -680,6 +1040,10 @@ def undo():
     else:
         flash("Kein Eintrag zum Rückgängig machen vorhanden.", "error")
     return redirect(url_for("index"))
+
+@app.errorhandler(413)
+def upload_too_large(_error):
+    return "Datei zu groß. Maximale Uploadgröße: 15 MB.", 413
 
 if __name__ == "__main__":
     app.run(host=HOST, port=PORT, debug=DEBUG)

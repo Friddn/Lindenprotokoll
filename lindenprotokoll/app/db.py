@@ -1,5 +1,6 @@
 from __future__ import annotations
 import csv, io, sqlite3
+from werkzeug.security import generate_password_hash
 from config import DB_PATH, DEFAULT_FOOD_ITEMS, DEFAULT_MEDICATIONS, DEFAULT_PERSONS, DEFAULT_SETTINGS, DEFAULT_SYMPTOMS
 
 def connect() -> sqlite3.Connection:
@@ -99,6 +100,50 @@ def init_db() -> None:
             notes TEXT,
             FOREIGN KEY(entry_id) REFERENCES entries(entry_id) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS hp_hourly (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL UNIQUE,
+            electricity_kwh REAL, thermal_kwh REAL, source TEXT NOT NULL DEFAULT 'manual',
+            confidence REAL, screenshot_name TEXT
+        );
+        CREATE TABLE IF NOT EXISTS outdoor_hourly (
+            ts TEXT PRIMARY KEY, temperature_c REAL NOT NULL, source TEXT NOT NULL DEFAULT 'import'
+        );
+        CREATE TABLE IF NOT EXISTS daily_non_hp_electricity (
+            date TEXT PRIMARY KEY, kwh REAL NOT NULL, notes TEXT
+        );
+        CREATE TABLE IF NOT EXISTS graph_screenshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT NOT NULL,
+            stored_path TEXT NOT NULL, graph_date TEXT, status TEXT NOT NULL DEFAULT 'uploaded',
+            notes TEXT, ocr_text TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS daily_hp_totals (
+            date TEXT PRIMARY KEY, electricity_kwh REAL, thermal_kwh REAL,
+            source TEXT NOT NULL DEFAULT 'screenshot-manual', screenshot_id INTEGER,
+            confidence TEXT NOT NULL DEFAULT 'confirmed', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(screenshot_id) REFERENCES graph_screenshots(id) ON DELETE SET NULL
+        );
+        CREATE TABLE IF NOT EXISTS hp_graph_points (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, screenshot_id INTEGER NOT NULL,
+            ts TEXT NOT NULL, electricity_kw REAL, thermal_kw REAL,
+            confidence REAL NOT NULL DEFAULT 0.0, point_kind TEXT NOT NULL DEFAULT 'estimated',
+            FOREIGN KEY(screenshot_id) REFERENCES graph_screenshots(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_hp_graph_points_screenshot_ts
+            ON hp_graph_points(screenshot_id, ts);
+        CREATE TABLE IF NOT EXISTS security_login_state (
+            id INTEGER PRIMARY KEY CHECK(id=1),
+            failed_attempts INTEGER NOT NULL DEFAULT 0,
+            locked_until INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        INSERT OR IGNORE INTO security_login_state(id, failed_attempts, locked_until)
+            VALUES(1, 0, 0);
+        CREATE TABLE IF NOT EXISTS security_login_attempts (
+            client_key TEXT PRIMARY KEY,
+            failed_attempts INTEGER NOT NULL DEFAULT 0,
+            locked_until INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
         CREATE TABLE IF NOT EXISTS consumption_fuel (
             entry_id INTEGER PRIMARY KEY,
             vehicle TEXT NOT NULL,
@@ -110,6 +155,11 @@ def init_db() -> None:
             FOREIGN KEY(entry_id) REFERENCES entries(entry_id) ON DELETE CASCADE
         );
         """)
+        # Additive migrations for screenshot OCR and authoritative daily totals.
+        screenshot_cols = {r["name"] for r in conn.execute("PRAGMA table_info(graph_screenshots)")}
+        if "ocr_text" not in screenshot_cols:
+            conn.execute("ALTER TABLE graph_screenshots ADD COLUMN ocr_text TEXT")
+
         # Migration: add missing columns to existing tables
         for tbl in ("consumption_electricity", "consumption_water", "consumption_fuel",
                     "illness_fever", "illness_other"):
@@ -159,6 +209,14 @@ def init_db() -> None:
         for k, v in DEFAULT_SETTINGS.items():
             if k not in existing_settings:
                 conn.execute("INSERT INTO app_settings(setting_key, setting_value) VALUES (?,?)", (k, v))
+        # One-time migration: initialize the shared PIN as 000000, but require
+        # changing it before the application can be used.
+        if "security_pin_hash" not in existing_settings:
+            conn.execute("INSERT INTO app_settings(setting_key, setting_value) VALUES (?,?)",
+                         ("security_pin_hash", generate_password_hash("000000")))
+        if "security_pin_change_required" not in existing_settings:
+            conn.execute("INSERT INTO app_settings(setting_key, setting_value) VALUES (?,?)",
+                         ("security_pin_change_required", "1"))
 
 def get_setting(key: str, fallback: str = "") -> str:
     with connect() as conn:

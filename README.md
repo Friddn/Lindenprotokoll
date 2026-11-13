@@ -8,7 +8,7 @@ Mehrzweck-Protokoll-App für Essen, Krankheit und Verbrauch.
 2. Klicke oben rechts auf die **drei Punkte → Repositories**
 3. Füge folgende URL hinzu:
    ```
-   https://github.com/DEIN-USERNAME/DEIN-REPO-NAME
+   https://github.com/Friddn/Lindenprotokoll
    ```
 4. Das Add-on „Lindenprotokoll" erscheint jetzt im Store
 5. Installieren → Starten

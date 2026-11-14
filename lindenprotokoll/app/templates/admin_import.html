@@ -73,6 +73,7 @@ Personen und Essen werden automatisch angelegt wenn sie noch nicht existieren.</
 <form method="post"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
 <input type="hidden" name="kind" value="{{ kind }}">
 <input type="hidden" name="mode" value="commit">
+<input type="hidden" name="preview_id" value="{{ preview_id }}">
 <button class="big-button" type="submit">{{ preview_rows|length }} Einträge jetzt importieren</button>
 </form>
 {% endif %}

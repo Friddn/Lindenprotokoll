@@ -1084,20 +1084,31 @@ def _import_preview_dir():
     return path
 
 
-def _load_import_preview():
-    token = session.get("import_preview_id")
-    if not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9_-]{32,64}", token):
+def _valid_import_preview_token(token):
+    return isinstance(token, str) and re.fullmatch(r"[A-Za-z0-9_-]{32,64}", token)
+
+
+def _load_import_preview(token=None):
+    # The preview token is submitted as a hidden form field. Do not rely on
+    # Flask's browser cookie to carry the reference between preview and commit.
+    token = token or session.get("import_preview_id")
+    if not _valid_import_preview_token(token):
         return {}
     path = _import_preview_dir() / (token + ".json")
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict) or not isinstance(data.get("rows"), list):
+            return {}
+        return data
     except (OSError, ValueError, TypeError):
         return {}
 
 
-def _clear_import_preview():
-    token = session.pop("import_preview_id", None)
-    if isinstance(token, str) and re.fullmatch(r"[A-Za-z0-9_-]{32,64}", token):
+def _clear_import_preview(token=None):
+    token = token or session.get("import_preview_id")
+    if session.get("import_preview_id") == token:
+        session.pop("import_preview_id", None)
+    if _valid_import_preview_token(token):
         try:
             (_import_preview_dir() / (token + ".json")).unlink(missing_ok=True)
         except OSError:
@@ -1106,27 +1117,34 @@ def _clear_import_preview():
 
 @app.route("/verwaltung/import", methods=["GET", "POST"])
 def admin_import():
-    preview_rows = None; warnings = []; errors = []
+    preview_rows = None
+    warnings = []
+    errors = []
+    preview_id = None
     kind = request.form.get("kind") if request.method == "POST" else request.args.get("kind", "electricity")
+    mode = request.form.get("mode") if request.method == "POST" else None
+
     if request.method == "POST":
-        if request.form.get("mode") == "preview":
+        if mode == "preview":
             upload = request.files.get("csv_file")
             if not upload or not upload.filename:
                 flash("Bitte CSV-Datei auswählen.", "error")
             else:
                 preview_rows, warnings, errors = parse_import_csv(kind, upload)
                 _clear_import_preview()
-                token = secrets.token_urlsafe(32)
+                preview_id = secrets.token_urlsafe(32)
                 preview_data = {"kind": kind, "rows": preview_rows, "warnings": warnings, "errors": errors}
-                preview_path = _import_preview_dir() / (token + ".json")
+                preview_path = _import_preview_dir() / (preview_id + ".json")
                 temp_path = preview_path.with_suffix(".tmp")
                 temp_path.write_text(json.dumps(preview_data, ensure_ascii=False), encoding="utf-8")
                 os.replace(temp_path, preview_path)
-                session["import_preview_id"] = token
+                # Retain for page refresh convenience, but commit uses the hidden form token.
+                session["import_preview_id"] = preview_id
                 if not errors:
                     flash("Vorschau erstellt.", "success")
-        elif request.form.get("mode") == "commit":
-            data = _load_import_preview()
+        elif mode == "commit":
+            preview_id = request.form.get("preview_id", "")
+            data = _load_import_preview(preview_id)
             if not data:
                 flash("Import-Vorschau ist abgelaufen oder nicht mehr vorhanden. Bitte CSV erneut auswählen und Vorschau erstellen.", "error")
             elif data.get("kind") != kind:
@@ -1135,21 +1153,28 @@ def admin_import():
                 flash("Import enthält Fehler.", "error")
             else:
                 count = import_rows(kind, data.get("rows", []))
-                _clear_import_preview()
+                _clear_import_preview(preview_id)
                 flash(f"Import abgeschlossen: {count} Zeilen importiert.", "success")
                 return redirect(url_for("admin_import", kind=kind))
-        if request.form.get("mode") == "preview":
-            pass
-        elif request.form.get("mode") != "commit":
+        elif mode != "preview":
             _clear_import_preview()
     else:
-        data = _load_import_preview()
+        preview_id = request.args.get("preview_id") or session.get("import_preview_id")
+        data = _load_import_preview(preview_id)
         if data.get("kind") == kind:
-            preview_rows = data.get("rows"); warnings = data.get("warnings", []); errors = data.get("errors", [])
-    if request.method == "POST" and request.form.get("mode") == "preview":
-        # Keep the just-created preview visible in the response.
-        pass
-    return render_template("admin_import.html", kind=kind, preview_rows=preview_rows, warnings=warnings, errors=errors, **base_context())
+            preview_rows = data.get("rows")
+            warnings = data.get("warnings", [])
+            errors = data.get("errors", [])
+
+    return render_template(
+        "admin_import.html",
+        kind=kind,
+        preview_rows=preview_rows,
+        warnings=warnings,
+        errors=errors,
+        preview_id=preview_id,
+        **base_context()
+    )
 
 @app.route("/verwaltung/import/template/<kind>.csv")
 def import_template(kind):

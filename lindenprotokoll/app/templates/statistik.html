@@ -182,7 +182,7 @@ table.data-table td:first-child{text-align:left;}
       </div>
     </div>
     <div class="kpi-row" id="hp-stats-kpi"></div>
-    <p class="muted" style="font-size:.78rem;">Tageswerte im aktuell gewählten Strom-Zeitraum. Gesamtverbrauch wird nur angezeigt, wenn Wärmepumpe und übriger Haushaltsverbrauch für den Tag vorliegen.</p>
+    <p class="muted" style="font-size:.78rem;">Wärmepumpenwerte nutzen bestätigte Tageswerte, Stundenmessungen oder integrierte 15-Minuten-Kurvenschätzungen. Der Haushaltsverbrauch wird aus den absoluten Stromzähler-Differenzen als Tagesdurchschnitt des jeweiligen Ableseintervalls interpoliert. Das ist kein separat gemessener Tageswert.</p>
     <div class="chart-wrap"><canvas id="chartHpStats"></canvas></div>
     <p class="section-title">Ablesungen</p>
     <div style="overflow-x:auto">
@@ -510,27 +510,60 @@ function renderHpStats(){
   destroyChart('chartHpStats');
   const mode=document.getElementById('hp-stats-mode')?.value||'both';
   if(!hpStatsLoaded) return;
-  const dates=elecFiltered.map(r=>r.date).filter(Boolean).sort();
-  const from=dates.length?dates[0]:null, to=dates.length?dates[dates.length-1]:null;
-  const rows=HP_DAILY_STATS.filter(r=>(!from||r.date>=from)&&(!to||r.date<=to));
-  const hpRows=rows.filter(r=>r.hp_kwh!=null&&Number.isFinite(Number(r.hp_kwh)));
-  const totalRows=rows.filter(r=>r.total_kwh!=null&&Number.isFinite(Number(r.total_kwh)));
-  const sum=arr=>arr.reduce((a,r)=>a+Number(r.hp_kwh??r.total_kwh),0);
-  const hpTotal=hpRows.reduce((a,r)=>a+Number(r.hp_kwh),0);
-  const totalTotal=totalRows.reduce((a,r)=>a+Number(r.total_kwh),0);
-  const hpDays=hpRows.length, totalDays=totalRows.length;
+
+  const selected=[...elecFiltered].filter(r=>r.date).sort((a,b)=>a.date.localeCompare(b.date));
+  const from=selected.length?selected[0].date:null;
+  const to=selected.length?selected[selected.length-1].date:null;
+  const inRange=d=>!from||(!to||(d>=from&&d<=to));
+  const rows=HP_DAILY_STATS.filter(r=>inRange(r.date));
+
+  // Build a daily household-consumption series from the absolute meter deltas.
+  // A meter delta belongs to the interval between two readings; its average/day
+  // is spread over those days and explicitly labelled as an interval average.
+  const meterDaily=new Map();
+  for(const r of selected){
+    const days=Number(r.days), avg=Number(r.avgPerDay);
+    if(!Number.isFinite(days)||days<=0||!Number.isFinite(avg)||avg<0) continue;
+    const end=new Date(r.date+'T12:00:00Z');
+    for(let i=0;i<days;i++){
+      const d=new Date(end.getTime()-(i+1)*86400000).toISOString().slice(0,10);
+      if(inRange(d)) meterDaily.set(d,avg);
+    }
+  }
+
+  const hpByDate=new Map();
+  for(const r of rows){
+    const v=Number(r.hp_kwh);
+    if(r.hp_kwh!=null&&Number.isFinite(v)) hpByDate.set(r.date,{value:v,source:r.hp_source||'measured'});
+  }
+  const hpValues=[...hpByDate.values()];
+  const hpTotal=hpValues.reduce((a,r)=>a+r.value,0);
+  const hpDays=hpValues.length;
+  const meterValues=[...meterDaily.values()];
+  const householdTotal=meterValues.reduce((a,v)=>a+v,0);
+  const householdDays=meterValues.length;
   const fmt=v=>v.toLocaleString('de-DE',{maximumFractionDigits:1});
-  document.getElementById('hp-stats-kpi').innerHTML=
-    `<div class="kpi orange"><div class="val">${fmt(hpTotal)} kWh</div><div class="lbl">Wärmepumpe gesamt · ${hpDays} Tage</div></div>`+
+  const kpi=document.getElementById('hp-stats-kpi');
+  if(kpi) kpi.innerHTML=
+    `<div class="kpi orange"><div class="val">${fmt(hpTotal)} kWh</div><div class="lbl">Wärmepumpe im Zeitraum · ${hpDays} Tage</div></div>`+
     `<div class="kpi orange"><div class="val">${hpDays?fmt(hpTotal/hpDays):'—'} kWh</div><div class="lbl">Wärmepumpe Ø je Datentag</div></div>`+
-    `<div class="kpi red"><div class="val">${fmt(totalTotal)} kWh</div><div class="lbl">Gesamtverbrauch · ${totalDays} Tage</div></div>`+
-    `<div class="kpi red"><div class="val">${totalDays?fmt(totalTotal/totalDays):'—'} kWh</div><div class="lbl">Gesamt Ø je vollständigem Datentag</div></div>`;
+    `<div class="kpi red"><div class="val">${fmt(householdTotal)} kWh</div><div class="lbl">Haushalt gesamt · ${householdDays} interpolierte Tage</div></div>`+
+    `<div class="kpi red"><div class="val">${householdDays?fmt(householdTotal/householdDays):'—'} kWh</div><div class="lbl">Haushalt Ø je Tag aus Zählerintervallen</div></div>`;
+
+  const dates=[...new Set([...hpByDate.keys(),...meterDaily.keys()])].sort();
   const datasets=[];
-  if(mode!=='total') datasets.push({label:'Wärmepumpe',data:rows.map(r=>({x:r.date,y:r.hp_kwh})),borderColor:'#f97316',backgroundColor:'#fdba7444',tension:.25,pointRadius:2,spanGaps:false});
-  if(mode!=='hp') datasets.push({label:'Gesamtverbrauch',data:rows.map(r=>({x:r.date,y:r.total_kwh})),borderColor:'#ef4444',backgroundColor:'#fca5a544',tension:.25,pointRadius:2,spanGaps:false});
+  if(mode!=='total') datasets.push({
+    label:'Wärmepumpe (kWh/Tag; Messwert oder Kurven-Schätzung)',
+    data:dates.map(d=>({x:d,y:hpByDate.has(d)?hpByDate.get(d).value:null})),
+    borderColor:'#f97316',backgroundColor:'#fdba7444',tension:.25,pointRadius:2,spanGaps:false
+  });
+  if(mode!=='hp') datasets.push({
+    label:'Haushalt gesamt (kWh/Tag; Zählerintervall-Ø)',
+    data:dates.map(d=>({x:d,y:meterDaily.has(d)?meterDaily.get(d):null})),
+    borderColor:'#ef4444',backgroundColor:'#fca5a544',tension:0,pointRadius:2,spanGaps:false
+  });
   if(datasets.length) makeTimeChart('chartHpStats',datasets,'kWh/Tag');
 }
-
 // ==================== WASSER TAB ====================
 const ALL_WATER=computeDeltas(RAW.water,'date','water_meter_m3');
 let waterFiltered=ALL_WATER;

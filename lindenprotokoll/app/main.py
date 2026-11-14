@@ -1,5 +1,6 @@
 from __future__ import annotations
-from datetime import datetime
+from datetime import datetime, timedelta
+import math
 from zoneinfo import ZoneInfo
 
 APP_TZ = ZoneInfo("Europe/Berlin")
@@ -614,6 +615,45 @@ def heatpump_analysis():
                 message = f"{count} stündliche Tornesch-Temperaturwerte geladen ({start} bis {end}; Open-Meteo ERA5/ERA5-Land)."
             except Exception as exc:
                 message = "Wetterdaten konnten nicht geladen werden: " + str(exc)
+        elif action == "ocr_all_screenshots":
+            import shutil, subprocess
+            if not shutil.which("tesseract"):
+                message = "Tesseract OCR ist nicht installiert. Bitte zuerst das Add-on-Image mit Tesseract neu bauen."
+            else:
+                with connect() as conn:
+                    pending = conn.execute("SELECT id,stored_path FROM graph_screenshots WHERE COALESCE(ocr_text,'')='' ORDER BY id").fetchall()
+                ok = 0
+                failed = []
+                for shot in pending:
+                    try:
+                        proc = subprocess.run(["tesseract", shot["stored_path"], "stdout", "-l", "eng+deu", "--psm", "11"],
+                                              capture_output=True, text=True, timeout=45, check=False)
+                        if proc.returncode != 0:
+                            raise RuntimeError((proc.stderr or "OCR fehlgeschlagen")[:160])
+                        with connect() as conn:
+                            conn.execute("UPDATE graph_screenshots SET ocr_text=? WHERE id=?", (proc.stdout[:12000], shot["id"]))
+                        ok += 1
+                    except Exception as exc:
+                        failed.append(f"#{shot['id']}: {str(exc)[:100]}")
+                message = f"Batch-OCR abgeschlossen: {ok} erfolgreich, {len(failed)} fehlgeschlagen."
+                if failed:
+                    message += " " + "; ".join(failed[:5])
+        elif action == "delete_screenshot":
+            try:
+                shot_id = int(request.form.get("screenshot_id"))
+                with connect() as conn:
+                    shot = conn.execute("SELECT stored_path FROM graph_screenshots WHERE id=?", (shot_id,)).fetchone()
+                    if not shot:
+                        raise ValueError("Screenshot nicht gefunden.")
+                    conn.execute("DELETE FROM hp_graph_points WHERE screenshot_id=?", (shot_id,))
+                    conn.execute("DELETE FROM graph_screenshots WHERE id=?", (shot_id,))
+                try:
+                    Path(shot["stored_path"]).unlink(missing_ok=True)
+                except OSError:
+                    pass
+                message = f"Screenshot #{shot_id} gelöscht. Bereits bestätigte Tageswerte bleiben erhalten."
+            except Exception as exc:
+                message = "Screenshot konnte nicht gelöscht werden: " + str(exc)
         elif action == "ocr_screenshot":
             # Optional local OCR. Tesseract is not required for the app to run.
             try:
@@ -781,10 +821,33 @@ def heatpump_analysis():
         shots = [dict(r) for r in conn.execute("SELECT * FROM graph_screenshots ORDER BY id DESC")]
         daily_hp = [dict(r) for r in conn.execute("SELECT * FROM daily_hp_totals ORDER BY date DESC LIMIT 200")]
         graph_points = [dict(r) for r in conn.execute("SELECT * FROM hp_graph_points ORDER BY ts DESC LIMIT 300")]
+    import hashlib
+    duplicate_hashes = {}
+    for shot in shots:
+        try:
+            digest = hashlib.sha256(Path(shot["stored_path"]).read_bytes()).hexdigest()
+        except OSError:
+            digest = None
+        shot["_digest"] = digest
+        if digest:
+            duplicate_hashes.setdefault(digest, []).append(shot["id"])
+    for shot in shots:
+        group = duplicate_hashes.get(shot.get("_digest"), [])
+        shot["duplicate"] = len(group) > 1
+        shot["duplicate_ids"] = group if len(group) > 1 else []
+    screenshot_filter = request.args.get("screenshot_filter", "all")
+    if screenshot_filter == "unprocessed":
+        shots = [x for x in shots if not x.get("ocr_text")]
+    elif screenshot_filter == "processed":
+        shots = [x for x in shots if x.get("ocr_text")]
+    elif screenshot_filter == "digitized":
+        shots = [x for x in shots if x.get("status") == "digitized"]
+    elif screenshot_filter == "duplicates":
+        shots = [x for x in shots if x.get("duplicate")]
     from ocr_extract import parse_ocr_fields
     for shot in shots:
         shot["ocr_fields"] = parse_ocr_fields(shot.get("ocr_text") or "")
-    return render_template("heatpump_analysis.html", hp=hp, weather=weather, daily=daily, shots=shots, daily_hp=daily_hp, graph_points=graph_points, message=message, **base_context())
+    return render_template("heatpump_analysis.html", hp=hp, weather=weather, daily=daily, shots=shots, daily_hp=daily_hp, graph_points=graph_points, screenshot_filter=screenshot_filter, message=message, **base_context())
 
 @app.get("/statistik/waermepumpe/data")
 def heatpump_data():
@@ -811,11 +874,12 @@ def heatpump_daily_data():
                  THEN COALESCE(t.electricity_kwh, h.hp_kwh) + d.kwh ELSE NULL END AS total_kwh,
             t.thermal_kwh AS thermal_kwh,
             CASE WHEN t.electricity_kwh IS NOT NULL THEN 'screenshot-confirmed'
-                 WHEN h.hp_kwh IS NOT NULL THEN 'hourly-sum' ELSE NULL END AS hp_source
+                 WHEN h.hp_kwh IS NOT NULL THEN 'hourly-measured' ELSE NULL END AS hp_source
           FROM (
             SELECT date FROM daily_non_hp_electricity
             UNION SELECT date FROM daily_hp_totals
             UNION SELECT substr(ts,1,10) FROM hp_hourly
+            UNION SELECT substr(ts,1,10) FROM hp_graph_points
           ) dates
           LEFT JOIN daily_hp_totals t ON t.date=dates.date
           LEFT JOIN daily_non_hp_electricity d ON d.date=dates.date
@@ -823,7 +887,57 @@ def heatpump_daily_data():
                      FROM hp_hourly GROUP BY substr(ts,1,10)) h ON h.date=dates.date
           ORDER BY dates.date
         """).fetchall()
-    return {"data": [dict(r) for r in rows]}
+        graph_rows = conn.execute("""
+          SELECT ts, AVG(electricity_kw) AS electricity_kw
+          FROM hp_graph_points
+          WHERE electricity_kw IS NOT NULL
+          GROUP BY ts ORDER BY ts
+        """).fetchall()
+
+    # Integrate interpolated 15-minute power estimates (kW) into daily energy (kWh).
+    # Trapezoidal integration is used only across short neighbouring samples; gaps
+    # larger than 30 minutes are left unfilled instead of inventing consumption.
+    graph_daily = {}
+    parsed = []
+    for row in graph_rows:
+        try:
+            stamp = datetime.fromisoformat(str(row["ts"]).replace("Z", "+00:00"))
+            power = float(row["electricity_kw"])
+            if math.isfinite(power) and power >= 0:
+                parsed.append((stamp, power))
+        except (TypeError, ValueError):
+            continue
+    for (t0, p0), (t1, p1) in zip(parsed, parsed[1:]):
+        minutes = (t1 - t0).total_seconds() / 60.0
+        if minutes <= 0 or minutes > 30:
+            continue
+        # Split an interval at midnight if needed so daily totals remain correct.
+        cursor = t0
+        while cursor < t1:
+            next_midnight = (cursor.replace(hour=0, minute=0, second=0, microsecond=0)
+                             + datetime.timedelta(days=1))
+            end = min(t1, next_midnight)
+            fraction0 = (cursor - t0).total_seconds() / (t1 - t0).total_seconds()
+            fraction1 = (end - t0).total_seconds() / (t1 - t0).total_seconds()
+            pa = p0 + (p1 - p0) * fraction0
+            pb = p0 + (p1 - p0) * fraction1
+            hours = (end - cursor).total_seconds() / 3600.0
+            day = cursor.date().isoformat()
+            graph_daily[day] = graph_daily.get(day, 0.0) + ((pa + pb) / 2.0) * hours
+            cursor = end
+
+    output = []
+    for row in rows:
+        item = dict(row)
+        day = item["date"]
+        if item.get("hp_kwh") is None and day in graph_daily:
+            item["hp_kwh"] = round(graph_daily[day], 3)
+            item["hp_source"] = "graph-interpolated"
+        if item.get("total_kwh") is None and item.get("hp_kwh") is not None and item.get("non_hp_kwh") is not None:
+            item["total_kwh"] = round(float(item["hp_kwh"]) + float(item["non_hp_kwh"]), 3)
+        item["graph_hp_kwh"] = round(graph_daily[day], 3) if day in graph_daily else None
+        output.append(item)
+    return {"data": output}
 
 @app.route("/statistik/regression/dataset", methods=["POST"])
 def regression_dataset():

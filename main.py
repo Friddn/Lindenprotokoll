@@ -1065,9 +1065,49 @@ def admin_abdominal():
         upload_error=upload_error,
         **base_context())
 
+def _import_preview_dir():
+    from config import DATA_DIR
+    path = DATA_DIR / "import_previews"
+    path.mkdir(parents=True, exist_ok=True)
+    # Remove abandoned previews after 2 hours; previews are temporary, not user data.
+    try:
+        import time
+        cutoff = time.time() - 2 * 60 * 60
+        for item in path.glob("*.json"):
+            try:
+                if item.stat().st_mtime < cutoff:
+                    item.unlink()
+            except OSError:
+                pass
+    except OSError:
+        pass
+    return path
+
+
+def _load_import_preview():
+    token = session.get("import_preview_id")
+    if not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9_-]{32,64}", token):
+        return {}
+    path = _import_preview_dir() / (token + ".json")
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
+def _clear_import_preview():
+    token = session.pop("import_preview_id", None)
+    if isinstance(token, str) and re.fullmatch(r"[A-Za-z0-9_-]{32,64}", token):
+        try:
+            (_import_preview_dir() / (token + ".json")).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 @app.route("/verwaltung/import", methods=["GET", "POST"])
 def admin_import():
-    preview_rows = None; warnings = []; errors = []; kind = request.form.get("kind") if request.method == "POST" else request.args.get("kind","electricity")
+    preview_rows = None; warnings = []; errors = []
+    kind = request.form.get("kind") if request.method == "POST" else request.args.get("kind", "electricity")
     if request.method == "POST":
         if request.form.get("mode") == "preview":
             upload = request.files.get("csv_file")
@@ -1075,24 +1115,40 @@ def admin_import():
                 flash("Bitte CSV-Datei auswählen.", "error")
             else:
                 preview_rows, warnings, errors = parse_import_csv(kind, upload)
-                session["import_preview"] = json.dumps({"kind": kind, "rows": preview_rows, "warnings": warnings, "errors": errors})
+                _clear_import_preview()
+                token = secrets.token_urlsafe(32)
+                preview_data = {"kind": kind, "rows": preview_rows, "warnings": warnings, "errors": errors}
+                preview_path = _import_preview_dir() / (token + ".json")
+                temp_path = preview_path.with_suffix(".tmp")
+                temp_path.write_text(json.dumps(preview_data, ensure_ascii=False), encoding="utf-8")
+                os.replace(temp_path, preview_path)
+                session["import_preview_id"] = token
                 if not errors:
                     flash("Vorschau erstellt.", "success")
         elif request.form.get("mode") == "commit":
-            data = json.loads(session.get("import_preview", "{}") or "{}")
-            if data.get("kind") != kind:
-                flash("Import-Vorschau passt nicht mehr.", "error")
+            data = _load_import_preview()
+            if not data:
+                flash("Import-Vorschau ist abgelaufen oder nicht mehr vorhanden. Bitte CSV erneut auswählen und Vorschau erstellen.", "error")
+            elif data.get("kind") != kind:
+                flash("Der Importtyp wurde geändert. Bitte für diesen Importtyp eine neue Vorschau erstellen.", "error")
             elif data.get("errors"):
                 flash("Import enthält Fehler.", "error")
             else:
                 count = import_rows(kind, data.get("rows", []))
-                session.pop("import_preview", None)
+                _clear_import_preview()
                 flash(f"Import abgeschlossen: {count} Zeilen importiert.", "success")
                 return redirect(url_for("admin_import", kind=kind))
+        if request.form.get("mode") == "preview":
+            pass
+        elif request.form.get("mode") != "commit":
+            _clear_import_preview()
     else:
-        data = json.loads(session.get("import_preview", "{}") or "{}") if session.get("import_preview") else {}
+        data = _load_import_preview()
         if data.get("kind") == kind:
             preview_rows = data.get("rows"); warnings = data.get("warnings", []); errors = data.get("errors", [])
+    if request.method == "POST" and request.form.get("mode") == "preview":
+        # Keep the just-created preview visible in the response.
+        pass
     return render_template("admin_import.html", kind=kind, preview_rows=preview_rows, warnings=warnings, errors=errors, **base_context())
 
 @app.route("/verwaltung/import/template/<kind>.csv")

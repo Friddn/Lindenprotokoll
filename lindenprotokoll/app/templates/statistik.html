@@ -170,6 +170,20 @@ table.data-table td:first-child{text-align:left;}
     <p class="section-title">Ø Verbrauch pro Tag – Verlauf</p>
     <p class="muted" style="font-size:.78rem;margin-top:-.3rem;margin-bottom:.6rem;">Jeder Punkt = Ø des Intervalls zwischen zwei Ablesungen</p>
     <div class="chart-wrap"><canvas id="chartElecAvg"></canvas></div>
+    <hr style="margin:1rem 0;border:none;border-top:1px solid #e5e7eb;">
+    <p class="section-title">Wärmepumpe im Vergleich zum Gesamtverbrauch</p>
+    <div class="filter-row">
+      <div><label>Zusätzliche Verbrauchskurve</label>
+        <select id="hp-stats-mode" onchange="renderHpStats()">
+          <option value="both">Wärmepumpe + Gesamtverbrauch</option>
+          <option value="hp">Nur Wärmepumpe</option>
+          <option value="total">Nur Gesamtverbrauch</option>
+        </select>
+      </div>
+    </div>
+    <div class="kpi-row" id="hp-stats-kpi"></div>
+    <p class="muted" style="font-size:.78rem;">Tageswerte im aktuell gewählten Strom-Zeitraum. Gesamtverbrauch wird nur angezeigt, wenn Wärmepumpe und übriger Haushaltsverbrauch für den Tag vorliegen.</p>
+    <div class="chart-wrap"><canvas id="chartHpStats"></canvas></div>
     <p class="section-title">Ablesungen</p>
     <div style="overflow-x:auto">
       <table class="data-table" id="elec-table">
@@ -470,8 +484,52 @@ function renderElec(){
   const fmtD=v=>v==null?'—':v<0?`<span style="color:#f59e0b">⚠${v.toLocaleString('de-DE')}</span>`:`+${v.toLocaleString('de-DE')}`;
   const tb=document.getElementById('elec-table-body');
   for(const r of [...data].reverse()){const tr=document.createElement('tr');tr.innerHTML=`<td>${r.date}</td><td>${fmtN(r.consumption_meter_kwh)}</td><td>${fmtD(r.delta)}</td><td>${r.days??'—'}</td><td style="color:#ef4444;font-weight:600">${r.delta!=null&&r.delta>=0?(r.avgPerDay??'—'):'—'}</td><td>${fmtN(r.feedin_meter_kwh)}</td><td>${fmtD(r.deltaF)}</td><td style="color:#10b981;font-weight:600">${r.deltaF!=null&&r.deltaF>=0?(r.avgF??'—'):'—'}</td><td style="text-align:left">${r.notes||''}</td>`;tb.appendChild(tr);}
+  renderHpStats();
 }
 setupCustomDateToggle('elec-period','elec-custom-from-wrap','elec-custom-to-wrap',applyElecFilter);
+
+// ==================== HEAT PUMP IN ELECTRICITY STATISTICS ====================
+let HP_DAILY_STATS=[];
+let hpStatsLoaded=false;
+async function loadHpStats(){
+  try{
+    const response=await fetch('/statistik/waermepumpe/daily');
+    if(!response.ok) throw new Error('HTTP '+response.status);
+    const payload=await response.json();
+    HP_DAILY_STATS=payload.data||[];
+    hpStatsLoaded=true;
+    renderHpStats();
+  }catch(err){
+    const el=document.getElementById('hp-stats-kpi');
+    if(el) el.textContent='Wärmepumpen-Daten konnten nicht geladen werden.';
+  }
+}
+function renderHpStats(){
+  const canvas=document.getElementById('chartHpStats');
+  if(!canvas) return;
+  destroyChart('chartHpStats');
+  const mode=document.getElementById('hp-stats-mode')?.value||'both';
+  if(!hpStatsLoaded) return;
+  const dates=elecFiltered.map(r=>r.date).filter(Boolean).sort();
+  const from=dates.length?dates[0]:null, to=dates.length?dates[dates.length-1]:null;
+  const rows=HP_DAILY_STATS.filter(r=>(!from||r.date>=from)&&(!to||r.date<=to));
+  const hpRows=rows.filter(r=>r.hp_kwh!=null&&Number.isFinite(Number(r.hp_kwh)));
+  const totalRows=rows.filter(r=>r.total_kwh!=null&&Number.isFinite(Number(r.total_kwh)));
+  const sum=arr=>arr.reduce((a,r)=>a+Number(r.hp_kwh??r.total_kwh),0);
+  const hpTotal=hpRows.reduce((a,r)=>a+Number(r.hp_kwh),0);
+  const totalTotal=totalRows.reduce((a,r)=>a+Number(r.total_kwh),0);
+  const hpDays=hpRows.length, totalDays=totalRows.length;
+  const fmt=v=>v.toLocaleString('de-DE',{maximumFractionDigits:1});
+  document.getElementById('hp-stats-kpi').innerHTML=
+    `<div class="kpi orange"><div class="val">${fmt(hpTotal)} kWh</div><div class="lbl">Wärmepumpe gesamt · ${hpDays} Tage</div></div>`+
+    `<div class="kpi orange"><div class="val">${hpDays?fmt(hpTotal/hpDays):'—'} kWh</div><div class="lbl">Wärmepumpe Ø je Datentag</div></div>`+
+    `<div class="kpi red"><div class="val">${fmt(totalTotal)} kWh</div><div class="lbl">Gesamtverbrauch · ${totalDays} Tage</div></div>`+
+    `<div class="kpi red"><div class="val">${totalDays?fmt(totalTotal/totalDays):'—'} kWh</div><div class="lbl">Gesamt Ø je vollständigem Datentag</div></div>`;
+  const datasets=[];
+  if(mode!=='total') datasets.push({label:'Wärmepumpe',data:rows.map(r=>({x:r.date,y:r.hp_kwh})),borderColor:'#f97316',backgroundColor:'#fdba7444',tension:.25,pointRadius:2,spanGaps:false});
+  if(mode!=='hp') datasets.push({label:'Gesamtverbrauch',data:rows.map(r=>({x:r.date,y:r.total_kwh})),borderColor:'#ef4444',backgroundColor:'#fca5a544',tension:.25,pointRadius:2,spanGaps:false});
+  if(datasets.length) makeTimeChart('chartHpStats',datasets,'kWh/Tag');
+}
 
 // ==================== WASSER TAB ====================
 const ALL_WATER=computeDeltas(RAW.water,'date','water_meter_m3');
@@ -868,3 +926,5 @@ function renderRegressionResults(data) {
 })();
 </script>
 {% endblock %}
+\n<script>/* heat-pump statistics data is loaded with the statistics page */loadHpStats();\nloadHpStats();
+</script>\n

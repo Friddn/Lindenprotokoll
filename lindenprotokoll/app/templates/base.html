@@ -18,6 +18,7 @@
       <a href="{{ url_for('export_page') }}">Export</a>
       <a href="{{ url_for('verwaltung') }}">Verwaltung</a>
       <a href="{{ url_for('security_settings') }}">Sicherheit</a>
+      <a href="{{ url_for('system_diagnostics') }}">Systemdiagnose</a>
       <form method="post" action="{{ url_for('pin_logout') }}" style="display:inline"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><button type="submit" class="nav-button">Abmelden</button></form>
     </nav>
   </header>

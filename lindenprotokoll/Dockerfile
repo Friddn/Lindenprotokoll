@@ -10,7 +10,10 @@ RUN apk add --no-cache \
     musl-dev \
     python3-dev \
     py3-numpy \
-    py3-scipy
+    py3-scipy \
+    tesseract-ocr \
+    tesseract-ocr-data-deu \
+    tesseract-ocr-data-eng
 
 ENV TZ=Europe/Berlin
 WORKDIR /app

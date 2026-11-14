@@ -27,9 +27,9 @@
 <form method="post"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="ocr_screenshot"><input type="hidden" name="screenshot_id" value="{{ shot.id }}"><button>Gedruckte Zahlen lokal per OCR lesen (optional)</button></form>
 {% if shot.ocr_text %}<label>OCR-Ergebnis – bitte mit Originalbild abgleichen<textarea rows="5" readonly>{{ shot.ocr_text }}</textarea></label>{% endif %}
 <form method="post"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="save_daily_screenshot_totals"><input type="hidden" name="screenshot_id" value="{{ shot.id }}"><h4>Gedruckte Tageswerte bestätigen (maßgeblich)</h4>
-<label>Datum <input type="date" name="daily_date" value="{{ shot.graph_date or '' }}" required></label>
-<label>Wärmepumpen-Strom (kWh/Tag) <input type="number" name="daily_electricity_kwh" min="0" step="0.1" placeholder="z. B. 22.7"></label>
-<label>Thermische Energie (kWh/Tag) <input type="number" name="daily_thermal_kwh" min="0" step="0.1" placeholder="z. B. 91.8"></label>
+<label>Datum <input type="date" name="daily_date" value="{{ shot.ocr_fields.date or shot.graph_date or '' }}" required></label>
+<label>Wärmepumpen-Strom (kWh/Tag) <input type="number" name="daily_electricity_kwh" min="0" step="0.1" value="{{ shot.ocr_fields.electricity_kwh if shot.ocr_fields.electricity_kwh is not none else '' }}" placeholder="z. B. 22.7"></label>
+<label>Thermische Energie (kWh/Tag) <input type="number" name="daily_thermal_kwh" min="0" step="0.1" value="{{ shot.ocr_fields.thermal_kwh if shot.ocr_fields.thermal_kwh is not none else '' }}" placeholder="z. B. 91.8"></label>
 <button>Tageswerte speichern und bestätigen</button></form>
 <form method="post"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="digitize_screenshot"><input type="hidden" name="screenshot_id" value="{{ shot.id }}">
 <label>Diagramm-Datum <input type="date" name="digitize_date" value="{{ shot.graph_date or '' }}" required></label>

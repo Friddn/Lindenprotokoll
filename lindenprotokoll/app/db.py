@@ -920,7 +920,12 @@ def _get_or_create_medication(conn, name):
 def parse_import_csv(kind, file_storage):
     text = file_storage.read().decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(text))
+    headers = set(reader.fieldnames or [])
     rows, warnings, errors = [], [], []
+    if {"category", "user_agent_raw", "entry_id"}.issubset(headers) and not ({"foods", "temperature_c", "consumption_meter_kwh"} & headers):
+        return [], [], ["Diese all.csv enthält nur allgemeine Eintrags-Metadaten, keine vollständigen Detaildaten. Bitte die meal-, illness- und consumption-Exporte importieren."]
+    if kind == "consumption" and not {"subtype", "date", "time"}.issubset(headers):
+        return [], [], ["Für diesen Import wird der vollständige consumption-Export erwartet."]
 
     def parse_int(v):
         v = (v or "").strip()
@@ -970,6 +975,8 @@ def parse_import_csv(kind, file_storage):
                 item["subtype"] = subtype
                 item["person"] = person
                 item["notes"] = (row.get("notes") or "").strip()
+                regions_raw = (row.get("regions") or "").strip()
+                item["regions"] = [v.strip() for v in regions_raw.split("|") if v.strip()] if regions_raw else []
                 if subtype == "fever":
                     temp = parse_float(row.get("temperature_c"))
                     if temp is None:
@@ -990,22 +997,41 @@ def parse_import_csv(kind, file_storage):
                         raise ValueError("Symptome fehlen")
                     item["symptom_names"] = sym_names
 
-            elif kind == "electricity":
-                item["consumption_meter_kwh"] = parse_int(row.get("consumption_meter_kwh"))
-                item["feedin_meter_kwh"] = parse_int(row.get("feedin_meter_kwh"))
+            elif kind in ("electricity", "consumption"):
+                subtype = (row.get("subtype") or "electricity").strip() if kind == "consumption" else "electricity"
+                if subtype not in ("electricity", "water", "fuel"):
+                    raise ValueError(f"Unbekannter Verbrauchstyp: {subtype}")
+                item["subtype"] = subtype
                 item["notes"] = (row.get("notes") or "").strip()
-                if item["consumption_meter_kwh"] is None and item["feedin_meter_kwh"] is None:
-                    raise ValueError("mindestens ein Zählerstand fehlt")
-                with connect() as conn:
-                    dup = conn.execute("""SELECT e.entry_id FROM entries e JOIN consumption_electricity c ON e.entry_id=c.entry_id
-                        WHERE e.subtype='electricity' AND e.date=? AND e.time=?
-                        AND ifnull(c.consumption_meter_kwh,-1)=ifnull(?, -1)
-                        AND ifnull(c.feedin_meter_kwh,-1)=ifnull(?, -1)""",
-                        (date, time, item["consumption_meter_kwh"], item["feedin_meter_kwh"])).fetchone()
-                    if dup:
-                        warnings.append(f"Zeile {idx}: mögliches Duplikat")
+                if subtype == "electricity":
+                    item["consumption_meter_kwh"] = parse_int(row.get("consumption_meter_kwh"))
+                    item["feedin_meter_kwh"] = parse_int(row.get("feedin_meter_kwh"))
+                    if item["consumption_meter_kwh"] is None and item["feedin_meter_kwh"] is None:
+                        raise ValueError("mindestens ein Zählerstand fehlt")
+                elif subtype == "water":
+                    item["water_meter_m3"] = parse_int(row.get("water_meter_m3"))
+                    if item["water_meter_m3"] is None:
+                        raise ValueError("Wasser Zählerstand fehlt")
+                else:
+                    item["vehicle"] = (row.get("vehicle") or "Kangoo").strip() or "Kangoo"
+                    item["odometer_km"] = parse_int(row.get("odometer_km"))
+                    item["total_price_eur"] = parse_float(row.get("total_price_eur"))
+                    item["liters"] = parse_float(row.get("liters"))
+                    item["price_per_liter"] = parse_float(row.get("price_per_liter"))
+                    if all(v is None for v in [item["odometer_km"], item["total_price_eur"], item["liters"], item["price_per_liter"]]):
+                        raise ValueError("Tankdaten sind leer")
+                if subtype == "electricity":
+                    with connect() as conn:
+                        dup = conn.execute("""SELECT e.entry_id FROM entries e JOIN consumption_electricity c ON e.entry_id=c.entry_id
+                            WHERE e.subtype='electricity' AND e.date=? AND e.time=?
+                            AND ifnull(c.consumption_meter_kwh,-1)=ifnull(?, -1)
+                            AND ifnull(c.feedin_meter_kwh,-1)=ifnull(?, -1)""",
+                            (date, time, item["consumption_meter_kwh"], item["feedin_meter_kwh"])).fetchone()
+                        if dup:
+                            warnings.append(f"Zeile {idx}: mögliches Duplikat")
 
             elif kind == "water":
+                item["subtype"] = "water"
                 item["water_meter_m3"] = parse_int(row.get("water_meter_m3"))
                 item["notes"] = (row.get("notes") or "").strip()
                 if item["water_meter_m3"] is None:
@@ -1018,6 +1044,7 @@ def parse_import_csv(kind, file_storage):
                         warnings.append(f"Zeile {idx}: mögliches Duplikat")
 
             elif kind == "fuel":
+                item["subtype"] = "fuel"
                 item["vehicle"] = (row.get("vehicle") or "Kangoo").strip() or "Kangoo"
                 item["odometer_km"] = parse_int(row.get("odometer_km"))
                 item["total_price_eur"] = parse_float(row.get("total_price_eur"))
@@ -1056,7 +1083,7 @@ def import_rows(kind, rows, device_type="import", ua="csv import"):
                 pid = _get_or_create_person(conn, row["person"])
             notes = row.get("notes", "")
             if subtype == "abdominal_pain":
-                save_abdominal_pain(pid, row["date"], row["time"], [], notes, device_type, ua)
+                save_abdominal_pain(pid, row["date"], row["time"], row.get("regions", []), notes, device_type, ua)
             elif subtype == "fever":
                 save_fever(pid, row["date"], row["time"], row["temperature_c"], notes, device_type, ua)
             elif subtype == "medication":
@@ -1080,12 +1107,14 @@ def import_rows(kind, rows, device_type="import", ua="csv import"):
                 save_symptoms(pid, row["date"], row["time"], sym_ids, notes, device_type, ua)
             elif subtype == "other":
                 save_other_illness(pid, row["date"], row["time"], notes, device_type, ua)
-        elif kind == "electricity":
-            save_electricity(row["date"], row["time"], row["consumption_meter_kwh"], row["feedin_meter_kwh"], row["notes"], device_type, ua)
-        elif kind == "water":
-            save_water(row["date"], row["time"], row["water_meter_m3"], row["notes"], device_type, ua)
-        elif kind == "fuel":
-            save_fuel(row["date"], row["time"], row["vehicle"], row["odometer_km"], row["total_price_eur"], row["liters"], row["price_per_liter"], row["notes"], device_type, ua)
+        elif kind in ("electricity", "water", "fuel", "consumption"):
+            subtype = row.get("subtype") or kind
+            if subtype == "electricity":
+                save_electricity(row["date"], row["time"], row.get("consumption_meter_kwh"), row.get("feedin_meter_kwh"), row.get("notes", ""), device_type, ua)
+            elif subtype == "water":
+                save_water(row["date"], row["time"], row["water_meter_m3"], row.get("notes", ""), device_type, ua)
+            elif subtype == "fuel":
+                save_fuel(row["date"], row["time"], row.get("vehicle", "Kangoo"), row.get("odometer_km"), row.get("total_price_eur"), row.get("liters"), row.get("price_per_liter"), row.get("notes", ""), device_type, ua)
         created += 1
     return created
 

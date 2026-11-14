@@ -1,16 +1,18 @@
 {% extends "base.html" %}{% block content %}
 <div class="card"><h2>Import</h2>
 <div class="button-group" style="flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem;">
-{% for k,l in [('meal','Essen'),('illness','Krank'),('electricity','Strom'),('water','Wasser'),('fuel','Auto')] %}
+{% for k,l in [('meal','Essen'),('illness','Krank'),('consumption','Verbrauch-Export'),('electricity','Strom'),('water','Wasser'),('fuel','Auto')] %}
 <a class="big-button link-button {% if kind==k %}active{% endif %}" style="flex:0 0 auto;" href="{{ url_for('admin_import', kind=k) }}">{{ l }}</a>
 {% endfor %}
 </div>
 
-<h3>Import: {{ {'meal':'Essen','illness':'Krank','electricity':'Strom','water':'Wasser','fuel':'Auto'}.get(kind, kind) }}</h3>
+<h3>Import: {{ {'meal':'Essen','illness':'Krank','consumption':'Verbrauch-Export','electricity':'Strom','water':'Wasser','fuel':'Auto'}.get(kind, kind) }}</h3>
 
 {% if kind == 'meal' %}
 <p class="muted">Spalten: <code>person, date (YYYY-MM-DD), time (HH:MM), foods (mit " | " getrennt)</code><br>
 Personen und Essen werden automatisch angelegt wenn sie noch nicht existieren.</p>
+{% elif kind == 'consumption' %}
+<p class="muted">Importiert den vollständigen Export <code>lindenprotokoll_consumption_*.csv</code> mit Strom-, Wasser- und Tankdaten in einem Schritt.</p>
 {% elif kind == 'illness' %}
 <p class="muted">
   Spalten: <code>subtype, person, date (YYYY-MM-DD), time (HH:MM), temperature_c, regions, medications (mit " | " getrennt), symptoms (mit " | " getrennt), notes</code><br>
@@ -48,7 +50,9 @@ Personen und Essen werden automatisch angelegt wenn sie noch nicht existieren.</
   {% if kind == 'meal' %}
     <strong>{{ row.date }} {{ row.time }}</strong> – {{ row.person }}<br>
     <span class="muted">{{ row.food_names | join(', ') or '(kein Essen)' }}</span>
-  {% elif kind == 'illness' %}
+  {% elif kind == 'consumption' %}
+<p class="muted">Importiert den vollständigen Export <code>lindenprotokoll_consumption_*.csv</code> mit Strom-, Wasser- und Tankdaten in einem Schritt.</p>
+{% elif kind == 'illness' %}
     <strong>{{ row.date }} {{ row.time }}</strong> – {{ row.person }} / {{ row.subtype }}<br>
     <span class="muted">
       {% if row.subtype == 'fever' %}{{ row.temperature_c }} °C{% endif %}

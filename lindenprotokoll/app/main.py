@@ -666,25 +666,40 @@ def heatpump_analysis():
                 message = "Tageswerte konnten nicht gespeichert werden: " + str(exc)
         elif action == "digitize_screenshot":
             try:
-                from graph_digitizer import digitize
+                from graph_digitizer import digitize, auto_calibrate, resample_15min
+                from ocr_extract import parse_ocr_fields
                 shot_id = int(request.form.get("screenshot_id"))
                 with connect() as conn:
                     shot = conn.execute("SELECT * FROM graph_screenshots WHERE id=?",(shot_id,)).fetchone()
                 if not shot: raise ValueError("Screenshot nicht gefunden.")
-                date_value = request.form.get("digitize_date") or shot["graph_date"]
-                if not date_value: raise ValueError("Bitte ein Datum für den Screenshot angeben.")
-                bounds = [float(request.form[k]) for k in ("x_left","x_right","y_top","y_bottom","y_min","y_max")]
-                x_left,x_right,y_top,y_bottom,y_min,y_max=bounds
-                total=0; cadences=[]
-                extracted = []
+                ocr_text = shot["ocr_text"] or ""
+                if not ocr_text:
+                    import shutil, subprocess
+                    if not shutil.which("tesseract"):
+                        raise RuntimeError("Tesseract OCR ist für die automatische Erkennung erforderlich.")
+                    proc=subprocess.run(["tesseract",shot["stored_path"],"stdout","-l","eng+deu","--psm","11"],
+                                        capture_output=True,text=True,timeout=45,check=False)
+                    if proc.returncode: raise RuntimeError("Screenshot-OCR fehlgeschlagen.")
+                    ocr_text=proc.stdout[:12000]
+                fields=parse_ocr_fields(ocr_text)
+                date_value=request.form.get("digitize_date") or shot["graph_date"] or fields.get("date")
+                if not date_value: raise ValueError("Das Datum wurde nicht sicher erkannt. Bitte Datum im Screenshot-Datensatz ergänzen.")
+                total=0; cadences=[]; extracted=[]; calibrations={}
                 for curve in ("green","red"):
-                    pts,cadence=digitize(shot["stored_path"],date_value,x_left,x_right,y_top,y_bottom,y_min,y_max,curve)
+                    cal=auto_calibrate(shot["stored_path"],curve)
+                    calibrations[curve]=cal
+                    pts,cadence=digitize(shot["stored_path"],date_value,cal["x_left"],cal["x_right"],cal["y_top"],cal["y_bottom"],cal["y_min"],cal["y_max"],curve)
                     if cadence: cadences.append(cadence)
                     for pt in pts:
                         extracted.append((shot_id, pt['ts'], pt['value_kw'] if curve=='green' else None,
                                           pt['value_kw'] if curve=='red' else None, pt['confidence'],
                                           'estimated-'+curve+'-'+pt.get('point_kind','corner')))
-                    total += len(pts)
+                    regular = resample_15min(pts, date_value)
+                    for pt in regular:
+                        extracted.append((shot_id, pt['ts'], pt['value_kw'] if curve=='green' else None,
+                                          pt['value_kw'] if curve=='red' else None, pt['confidence'],
+                                          'estimated-'+curve+'-'+pt['point_kind']))
+                    total += len(pts) + len(regular)
                 # Replace this screenshot's prior extraction atomically. Re-running
                 # calibration must never accumulate duplicate candidate points.
                 with connect() as conn:
@@ -692,7 +707,7 @@ def heatpump_analysis():
                     conn.executemany("INSERT INTO hp_graph_points(screenshot_id,ts,electricity_kw,thermal_kw,confidence,point_kind) VALUES(?,?,?,?,?,?)", extracted)
                     conn.execute("UPDATE graph_screenshots SET status='digitized',graph_date=? WHERE id=?",(date_value,shot_id))
                 cadence_text = f"wiederkehrender Punktabstand etwa {round(sum(cadences)/len(cadences))} Minuten (nur Hinweis)" if cadences else "keine verlässliche Abtastrate erkennbar"
-                message = f"{total} geschätzte Kurvenpunkte erkannt; {cadence_text}. Bitte Werte prüfen; es sind keine Originalmessungen."
+                message = f"{total} geschätzte Kurvenpunkte automatisch erkannt (Achsen-OCR: {min(c['tick_count'] for c in calibrations.values())} y-Ticks); {cadence_text}. 15-Minuten-Werte sind interpolierte Schätzungen, keine Originalmessungen."
             except Exception as exc:
                 message = "Digitalisierung fehlgeschlagen: " + str(exc)
         elif action == "upload_screenshots":
@@ -766,6 +781,9 @@ def heatpump_analysis():
         shots = [dict(r) for r in conn.execute("SELECT * FROM graph_screenshots ORDER BY id DESC")]
         daily_hp = [dict(r) for r in conn.execute("SELECT * FROM daily_hp_totals ORDER BY date DESC LIMIT 200")]
         graph_points = [dict(r) for r in conn.execute("SELECT * FROM hp_graph_points ORDER BY ts DESC LIMIT 300")]
+    from ocr_extract import parse_ocr_fields
+    for shot in shots:
+        shot["ocr_fields"] = parse_ocr_fields(shot.get("ocr_text") or "")
     return render_template("heatpump_analysis.html", hp=hp, weather=weather, daily=daily, shots=shots, daily_hp=daily_hp, graph_points=graph_points, message=message, **base_context())
 
 @app.get("/statistik/waermepumpe/data")
@@ -874,6 +892,56 @@ def security_settings():
             flash("PIN wurde geändert.", "success")
             return redirect(url_for("security_settings"))
     return render_template("security_settings.html", **base_context())
+
+@app.route("/settings/diagnostics")
+def system_diagnostics():
+    """Report actual runtime availability of OCR and image dependencies."""
+    import importlib.metadata
+    import shutil
+    import subprocess
+
+    checks = []
+    tesseract_path = shutil.which("tesseract")
+    checks.append({"name": "Tesseract OCR", "ok": bool(tesseract_path),
+                   "detail": tesseract_path or "Programm nicht gefunden"})
+    languages = set()
+    version = "Nicht verfügbar"
+    if tesseract_path:
+        try:
+            v = subprocess.run([tesseract_path, "--version"], capture_output=True, text=True, timeout=8)
+            version = (v.stdout or v.stderr).splitlines()[0][:160] if (v.stdout or v.stderr) else "Keine Versionsausgabe"
+            r = subprocess.run([tesseract_path, "--list-langs"], capture_output=True, text=True, timeout=8)
+            languages = set((r.stdout or "").splitlines()[1:])
+        except Exception as exc:
+            version = f"Prüfung fehlgeschlagen: {str(exc)[:120]}"
+    checks.append({"name": "Tesseract-Version", "ok": version.startswith("tesseract "), "detail": version})
+    for lang in ("deu", "eng"):
+        checks.append({"name": f"Sprachdaten {lang}", "ok": lang in languages,
+                       "detail": "Verfügbar" if lang in languages else "Nicht gefunden"})
+    try:
+        from PIL import Image
+        import PIL
+        checks.append({"name": "Pillow", "ok": True, "detail": f"Version {PIL.__version__}"})
+    except Exception as exc:
+        checks.append({"name": "Pillow", "ok": False, "detail": str(exc)[:160]})
+    ocr_test = False
+    ocr_detail = "Übersprungen: Tesseract oder Sprachdaten fehlen"
+    if tesseract_path and "eng" in languages:
+        try:
+            from PIL import Image, ImageDraw
+            from io import BytesIO
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
+                im = Image.new("RGB", (420, 90), "white")
+                ImageDraw.Draw(im).text((12, 24), "Lindenprotokoll OCR 2025-11-13", fill="black")
+                im.save(tmp.name)
+                result = subprocess.run([tesseract_path, tmp.name, "stdout", "-l", "eng"], capture_output=True, text=True, timeout=15)
+                ocr_detail = (result.stdout or "").strip().replace("\n", " ")[:160]
+                ocr_test = result.returncode == 0 and "Lindenprotokoll" in ocr_detail
+        except Exception as exc:
+            ocr_detail = f"Funktionstest fehlgeschlagen: {str(exc)[:120]}"
+    checks.append({"name": "OCR-Funktionstest", "ok": ocr_test, "detail": ocr_detail})
+    return render_template("system_diagnostics.html", checks=checks, all_ok=all(c["ok"] for c in checks), **base_context())
 
 @app.route("/admin/duplicates", methods=["GET", "POST"])
 def admin_duplicates():
@@ -997,9 +1065,49 @@ def admin_abdominal():
         upload_error=upload_error,
         **base_context())
 
+def _import_preview_dir():
+    from config import DATA_DIR
+    path = DATA_DIR / "import_previews"
+    path.mkdir(parents=True, exist_ok=True)
+    # Remove abandoned previews after 2 hours; previews are temporary, not user data.
+    try:
+        import time
+        cutoff = time.time() - 2 * 60 * 60
+        for item in path.glob("*.json"):
+            try:
+                if item.stat().st_mtime < cutoff:
+                    item.unlink()
+            except OSError:
+                pass
+    except OSError:
+        pass
+    return path
+
+
+def _load_import_preview():
+    token = session.get("import_preview_id")
+    if not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9_-]{32,64}", token):
+        return {}
+    path = _import_preview_dir() / (token + ".json")
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
+def _clear_import_preview():
+    token = session.pop("import_preview_id", None)
+    if isinstance(token, str) and re.fullmatch(r"[A-Za-z0-9_-]{32,64}", token):
+        try:
+            (_import_preview_dir() / (token + ".json")).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 @app.route("/verwaltung/import", methods=["GET", "POST"])
 def admin_import():
-    preview_rows = None; warnings = []; errors = []; kind = request.form.get("kind") if request.method == "POST" else request.args.get("kind","electricity")
+    preview_rows = None; warnings = []; errors = []
+    kind = request.form.get("kind") if request.method == "POST" else request.args.get("kind", "electricity")
     if request.method == "POST":
         if request.form.get("mode") == "preview":
             upload = request.files.get("csv_file")
@@ -1007,24 +1115,40 @@ def admin_import():
                 flash("Bitte CSV-Datei auswählen.", "error")
             else:
                 preview_rows, warnings, errors = parse_import_csv(kind, upload)
-                session["import_preview"] = json.dumps({"kind": kind, "rows": preview_rows, "warnings": warnings, "errors": errors})
+                _clear_import_preview()
+                token = secrets.token_urlsafe(32)
+                preview_data = {"kind": kind, "rows": preview_rows, "warnings": warnings, "errors": errors}
+                preview_path = _import_preview_dir() / (token + ".json")
+                temp_path = preview_path.with_suffix(".tmp")
+                temp_path.write_text(json.dumps(preview_data, ensure_ascii=False), encoding="utf-8")
+                os.replace(temp_path, preview_path)
+                session["import_preview_id"] = token
                 if not errors:
                     flash("Vorschau erstellt.", "success")
         elif request.form.get("mode") == "commit":
-            data = json.loads(session.get("import_preview", "{}") or "{}")
-            if data.get("kind") != kind:
-                flash("Import-Vorschau passt nicht mehr.", "error")
+            data = _load_import_preview()
+            if not data:
+                flash("Import-Vorschau ist abgelaufen oder nicht mehr vorhanden. Bitte CSV erneut auswählen und Vorschau erstellen.", "error")
+            elif data.get("kind") != kind:
+                flash("Der Importtyp wurde geändert. Bitte für diesen Importtyp eine neue Vorschau erstellen.", "error")
             elif data.get("errors"):
                 flash("Import enthält Fehler.", "error")
             else:
                 count = import_rows(kind, data.get("rows", []))
-                session.pop("import_preview", None)
+                _clear_import_preview()
                 flash(f"Import abgeschlossen: {count} Zeilen importiert.", "success")
                 return redirect(url_for("admin_import", kind=kind))
+        if request.form.get("mode") == "preview":
+            pass
+        elif request.form.get("mode") != "commit":
+            _clear_import_preview()
     else:
-        data = json.loads(session.get("import_preview", "{}") or "{}") if session.get("import_preview") else {}
+        data = _load_import_preview()
         if data.get("kind") == kind:
             preview_rows = data.get("rows"); warnings = data.get("warnings", []); errors = data.get("errors", [])
+    if request.method == "POST" and request.form.get("mode") == "preview":
+        # Keep the just-created preview visible in the response.
+        pass
     return render_template("admin_import.html", kind=kind, preview_rows=preview_rows, warnings=warnings, errors=errors, **base_context())
 
 @app.route("/verwaltung/import/template/<kind>.csv")

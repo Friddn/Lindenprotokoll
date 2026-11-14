@@ -1,0 +1,62 @@
+{% extends "base.html" %}{% block content %}
+<h2>Wärmepumpe & Außentemperatur</h2>
+{% if message %}<p class="message info">{{ message }}</p>{% endif %}
+<p>Lokale Zusatzdaten. Bestehende Stromzähler-Ablesungen und historische Einträge werden nicht verändert.</p>
+<section class="card">
+<h3>Stündlicher Verlauf – Wärmepumpe und Tornesch</h3>
+<div class="filter-row"><label><input type="checkbox" id="showhp" checked> Wärmepumpe</label><label><input type="checkbox" id="showtemp" checked> Außentemperatur</label><label><input type="checkbox" id="showest" checked> Screenshot-Kurven (Schätzwerte)</label></div>
+<canvas id="hpChart" height="110"></canvas>
+<p class="muted">Linke Achse: Wärmepumpen-Strom je Stunde (kWh, numerisch entsprechend mittlerer kW-Leistung) und rekonstruierte Kurven (kW); rechte Achse: °C. Fehlende Stunden bleiben Lücken. Screenshot-Kurven sind Schätzwerte.</p>
+</section>
+<section class="card"><h3>Täglicher Stromverbrauch – Wärmepumpe / ohne Wärmepumpe / gesamt</h3>
+<p>Die Tageswerte werden getrennt gespeichert. Gesamt = Wärmepumpe + zusätzlicher Verbrauch ohne Wärmepumpe. Fehlende Werte bleiben leer.</p>
+<label><input type="radio" name="dailyMode" value="both" checked> Beides</label>
+<label><input type="radio" name="dailyMode" value="hp"> Nur Wärmepumpe</label>
+<label><input type="radio" name="dailyMode" value="other"> Ohne Wärmepumpe</label>
+<canvas id="dailyElecChart" height="100"></canvas></section>
+<section class="card"><h3>CSV-Import – stündliche Wärmepumpenwerte</h3>
+<p>Spalten: <code>timestamp,electricity_kwh,thermal_kwh</code>. Zeitstempel lokal in Europe/Berlin, z. B. <code>2026-11-12T13:00</code>. Werte sind Energie je Stunde (kWh), nicht momentane kW-Leistung.</p>
+<form method="post" enctype="multipart/form-data"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="import_hp_csv"><input type="file" name="csv_file" accept=".csv" required><button>Wärmepumpen-CSV importieren</button></form></section>
+<section class="card"><h3>Tornesch – stündliche Außentemperatur</h3>
+<p>Automatischer Abruf der historischen Stundenwerte ab 2025 über Open-Meteo (Archivmodell ERA5/ERA5-Land), Standort Tornesch. Der Abruf benötigt Internetzugang des Add-ons; danach liegen die Werte lokal in SQLite.</p>
+<form method="post"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="fetch_weather"><label>Von <input type="date" name="start_date" value="2025-01-01" required></label><label>Bis <input type="date" name="end_date" required></label><button>Historische Wetterdaten laden</button></form>
+<p>Alternativ CSV-Import. Spalten: <code>timestamp,temperature_c</code>. Importiere historische Stundenwerte ab 2025. So bleiben Datenquelle und Import nachvollziehbar und die App benötigt keinen dauerhaften Wetter-API-Aufruf.</p><form method="post" enctype="multipart/form-data"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="import_weather_csv"><input type="file" name="csv_file" accept=".csv" required><button>Temperatur-CSV importieren</button></form></section>
+<section class="card"><h3>Zusätzlicher Stromverbrauch ohne Wärmepumpe</h3><p>Spalten: <code>date,kwh,notes</code>. Diese Werte müssen ausdrücklich den Tagesverbrauch OHNE Wärmepumpe enthalten. Sie werden nicht auf jede Stunde verteilt. Tageswerte werden als eigener Verbrauch gespeichert und können in den Ansichten ein- oder ausgeblendet werden.</p><form method="post" enctype="multipart/form-data"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="import_daily_csv"><input type="file" name="csv_file" accept=".csv" required><button>Tageswerte importieren</button></form><p>Vorhandene Werte: {{ daily|length }} Tage.</p></section>
+<section class="card"><h3>Graph-Screenshots archivieren und digitalisieren</h3><p>Originalbilder bleiben lokal archiviert. Für die Digitalisierung bitte den inneren Plotbereich pixelgenau kalibrieren (ohne Achsenbeschriftungen): X links/rechts, Y oben/unten sowie minimaler/maximaler kW-Wert. Grün wird als elektrische Leistung, Rot als thermische Leistung erkannt.</p><form method="post" enctype="multipart/form-data"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="upload_screenshots"><input type="date" name="graph_date"><input type="file" name="screenshots" accept="image/png,image/jpeg,image/webp" multiple required><button>Screenshots speichern</button></form><p>{{ shots|length }} Screenshot(s) archiviert.</p>
+{% for shot in shots %}<details><summary>#{{ shot.id }} – {{ shot.filename }} ({{ shot.graph_date or 'Datum fehlt' }}, {{ shot.status }})</summary>
+<form method="post"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="ocr_screenshot"><input type="hidden" name="screenshot_id" value="{{ shot.id }}"><button>Gedruckte Zahlen lokal per OCR lesen (optional)</button></form>
+{% if shot.ocr_text %}<label>OCR-Ergebnis – bitte mit Originalbild abgleichen<textarea rows="5" readonly>{{ shot.ocr_text }}</textarea></label>{% endif %}
+<form method="post"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="save_daily_screenshot_totals"><input type="hidden" name="screenshot_id" value="{{ shot.id }}"><h4>Gedruckte Tageswerte bestätigen (maßgeblich)</h4>
+<label>Datum <input type="date" name="daily_date" value="{{ shot.ocr_fields.date or shot.graph_date or '' }}" required></label>
+<label>Wärmepumpen-Strom (kWh/Tag) <input type="number" name="daily_electricity_kwh" min="0" step="0.1" value="{{ shot.ocr_fields.electricity_kwh if shot.ocr_fields.electricity_kwh is not none else '' }}" placeholder="z. B. 22.7"></label>
+<label>Thermische Energie (kWh/Tag) <input type="number" name="daily_thermal_kwh" min="0" step="0.1" value="{{ shot.ocr_fields.thermal_kwh if shot.ocr_fields.thermal_kwh is not none else '' }}" placeholder="z. B. 91.8"></label>
+<button>Tageswerte speichern und bestätigen</button></form>
+<form method="post"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="digitize_screenshot"><input type="hidden" name="screenshot_id" value="{{ shot.id }}">
+<label>Diagramm-Datum <input type="date" name="digitize_date" value="{{ shot.graph_date or '' }}" required></label>
+<div class="filter-row"><label>X links (px) <input type="number" name="x_left" required></label><label>X rechts (px) <input type="number" name="x_right" required></label><label>Y oben (px) <input type="number" name="y_top" required></label><label>Y unten (px) <input type="number" name="y_bottom" required></label><label>kW min <input type="number" step="0.1" name="y_min" value="0" required></label><label>kW max <input type="number" step="0.1" name="y_max" value="10" required></label></div><button>Kurvenpunkte erkennen</button></form></details>{% endfor %}
+<h4>Bestätigte Tageswerte aus Screenshots</h4>
+{% if daily_hp %}<div style="overflow:auto"><table><tr><th>Datum</th><th>WP-Strom (kWh)</th><th>Thermisch (kWh)</th><th>Quelle</th></tr>{% for d in daily_hp %}<tr><td>{{ d.date }}</td><td>{{ d.electricity_kwh if d.electricity_kwh is not none else '–' }}</td><td>{{ d.thermal_kwh if d.thermal_kwh is not none else '–' }}</td><td>{{ d.source }}</td></tr>{% endfor %}</table></div>{% else %}<p>Noch keine bestätigten Screenshot-Tageswerte.</p>{% endif %}
+<p><strong>Erkannte Kandidaten:</strong> {{ graph_points|length }} (letzte 300). Sie bleiben als Schätzwerte gespeichert und werden nicht automatisch als Originalmesswerte in die Stundenstatistik übernommen.</p>
+{% if graph_points %}<div style="overflow:auto"><table><tr><th>Zeit</th><th>Strom kW</th><th>Wärme kW</th><th>Vertrauen</th><th>Typ</th></tr>{% for p in graph_points %}<tr><td>{{ p.ts }}</td><td>{{ p.electricity_kw if p.electricity_kw is not none else '–' }}</td><td>{{ p.thermal_kw if p.thermal_kw is not none else '–' }}</td><td>{{ p.confidence }}</td><td>{{ p.point_kind }}</td></tr>{% endfor %}</table></div>{% endif %}</section>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script><script>
+fetch('{{ url_for("heatpump_daily_data") }}').then(r=>r.json()).then(({data})=>{const labels=data.map(x=>x.date);const hp=data.map(x=>x.hp_kwh);const other=data.map(x=>x.non_hp_kwh);const ch=new Chart(document.getElementById('dailyElecChart'),{type:'line',data:{labels,datasets:[{label:'Wärmepumpe',data:hp,borderColor:'#269b55',spanGaps:false},{label:'Ohne Wärmepumpe',data:other,borderColor:'#3976c6',spanGaps:false}]},options:{responsive:true,scales:{y:{title:{display:true,text:'kWh/Tag'}}}}});document.querySelectorAll('input[name=dailyMode]').forEach(el=>el.addEventListener('change',()=>{const m=document.querySelector('input[name=dailyMode]:checked').value;ch.data.datasets.forEach((d,i)=>d.hidden=m==='hp'?i!==0:m==='other'?i!==1:false);ch.update()}));});
+fetch('{{ url_for("heatpump_data") }}').then(r=>r.json()).then(({data,estimates})=>{
+const byTime=new Map(); data.forEach(x=>byTime.set(x.ts,{...x}));
+(estimates||[]).forEach(x=>{if(!byTime.has(x.ts))byTime.set(x.ts,{ts:x.ts});});
+const all=[...byTime.values()].sort((a,b)=>a.ts.localeCompare(b.ts));
+const labels=all.map(x=>x.ts);
+const actualE=new Map(data.map(x=>[x.ts,x.electricity_kwh]));
+const actualT=new Map(data.map(x=>[x.ts,x.temperature_c]));
+const estE=new Map((estimates||[]).map(x=>[x.ts,x.electricity_kw]));
+const estH=new Map((estimates||[]).map(x=>[x.ts,x.thermal_kw]));
+const c=new Chart(document.getElementById('hpChart'),{type:'line',data:{labels,datasets:[
+{label:'Wärmepumpe Strom (kWh je Stunde)',data:labels.map(t=>actualE.get(t)??null),yAxisID:'y',borderColor:'#269b55',pointRadius:0,spanGaps:false},
+{label:'Tornesch Temperatur (°C)',data:labels.map(t=>actualT.get(t)??null),yAxisID:'y1',borderColor:'#3976c6',pointRadius:0,spanGaps:false},
+{label:'Screenshot: Strom (geschätzt kW)',data:labels.map(t=>estE.get(t)??null),yAxisID:'y',borderColor:'#72b98b',borderDash:[6,4],pointRadius:2,showLine:false,spanGaps:false},
+{label:'Screenshot: Wärme (geschätzt kW)',data:labels.map(t=>estH.get(t)??null),yAxisID:'y',borderColor:'#d65a4a',borderDash:[6,4],pointRadius:2,showLine:false,spanGaps:false}
+]},options:{responsive:true,interaction:{mode:'index',intersect:false},scales:{x:{ticks:{maxTicksLimit:12}},y:{type:'linear',position:'left',title:{display:true,text:'kWh je Stunde / geschätzte kW'}},y1:{type:'linear',position:'right',title:{display:true,text:'°C'},grid:{drawOnChartArea:false}}}}});
+const showhp=document.getElementById('showhp'), showtemp=document.getElementById('showtemp'), showest=document.getElementById('showest');
+function vis(){c.data.datasets[0].hidden=!showhp.checked;c.data.datasets[1].hidden=!showtemp.checked;c.data.datasets[2].hidden=!showest.checked;c.data.datasets[3].hidden=!showest.checked;c.update();}
+['showhp','showtemp','showest'].forEach(id=>document.getElementById(id).addEventListener('change',vis));
+});
+</script>{% endblock %}

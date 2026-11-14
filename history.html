@@ -1,0 +1,22 @@
+{% extends "base.html" %}{% block content %}
+<div class="card"><h2>Historie</h2>
+<form method="get" class="filter-grid">
+<div><label>Person</label><select name="person_id"><option value="">Alle</option>{% for p in people %}<option value="{{ p.person_id }}" {% if selected_person_id == (p.person_id|string) %}selected{% endif %}>{{ p.display_name }}</option>{% endfor %}</select></div>
+<div><label>Untertyp</label><select name="subtype">
+<option value="">Alle</option>
+{% for s,l in [('meal','Essen'),('abdominal_pain','Bauchschmerzen'),('fever','Fieber'),('medication','Medikamente'),('symptoms','Symptome'),('other','Anderes'),('electricity','Strom'),('water','Wasser'),('fuel','Auto')] %}
+<option value="{{ s }}" {% if selected_subtype == s %}selected{% endif %}>{{ l }}</option>{% endfor %}
+</select></div>
+<div><label>Zeitraum</label><select name="period">
+<option value="">Alle</option><option value="today" {% if selected_period=='today' %}selected{% endif %}>Heute</option>
+<option value="7d" {% if selected_period=='7d' %}selected{% endif %}>7 Tage</option><option value="30d" {% if selected_period=='30d' %}selected{% endif %}>30 Tage</option>
+</select></div>
+<div class="align-end"><button type="submit">Filtern</button></div>
+</form>
+<div class="list">
+{% for entry in entries %}
+<a class="history-row link-row" href="{{ url_for('history_detail', entry_id=entry.entry_id) }}">
+<div><strong>{{ entry.date }} {{ entry.time }}</strong><br><span>{{ entry.summary.label }}{% if entry.person_name %} | {{ entry.person_name }}{% endif %}</span>{% if entry.summary.extra %}<br><span class="muted">{{ entry.summary.extra }}</span>{% endif %}</div>
+</a>
+{% else %}<p class="muted">Noch keine Einträge vorhanden.</p>{% endfor %}
+</div></div>{% endblock %}

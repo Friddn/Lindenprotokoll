@@ -1,0 +1,9 @@
+{% extends "base.html" %}{% block content %}
+<div class="card"><h2>Systemdiagnose</h2>
+<p>Prüft die tatsächlich installierten OCR-Komponenten in diesem Add-on-Container. Ein Neustart oder eine Neuinstallation ist nicht nötig, um diese Seite aufzurufen.</p>
+{% if all_ok %}<p class="message success">Alle Prüfungen erfolgreich.</p>{% else %}<p class="message error">Mindestens eine Prüfung ist fehlgeschlagen. OCR kann eingeschränkt oder nicht verfügbar sein.</p>{% endif %}
+<table><thead><tr><th>Komponente</th><th>Status</th><th>Details</th></tr></thead><tbody>
+{% for item in checks %}<tr><td>{{ item.name }}</td><td>{% if item.ok %}<span style="color:green">OK</span>{% else %}<span style="color:#b00020">Fehlt / Fehler</span>{% endif %}</td><td>{{ item.detail }}</td></tr>{% endfor %}
+</tbody></table>
+<p>Wenn eine Komponente fehlt: Add-on mit dem aktualisierten Dockerfile neu bauen und installieren. Ein bloßer Neustart installiert keine fehlenden Pakete.</p>
+</div>{% endblock %}

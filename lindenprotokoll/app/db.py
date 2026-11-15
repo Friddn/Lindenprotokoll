@@ -114,7 +114,7 @@ def init_db() -> None:
         CREATE TABLE IF NOT EXISTS graph_screenshots (
             id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT NOT NULL,
             stored_path TEXT NOT NULL, graph_date TEXT, status TEXT NOT NULL DEFAULT 'uploaded',
-            notes TEXT, ocr_text TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            notes TEXT, ocr_text TEXT, approved INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         CREATE TABLE IF NOT EXISTS daily_hp_totals (
             date TEXT PRIMARY KEY, electricity_kwh REAL, thermal_kwh REAL,
@@ -159,6 +159,8 @@ def init_db() -> None:
         screenshot_cols = {r["name"] for r in conn.execute("PRAGMA table_info(graph_screenshots)")}
         if "ocr_text" not in screenshot_cols:
             conn.execute("ALTER TABLE graph_screenshots ADD COLUMN ocr_text TEXT")
+        if "approved" not in screenshot_cols:
+            conn.execute("ALTER TABLE graph_screenshots ADD COLUMN approved INTEGER NOT NULL DEFAULT 0")
 
         # Migration: add missing columns to existing tables
         for tbl in ("consumption_electricity", "consumption_water", "consumption_fuel",

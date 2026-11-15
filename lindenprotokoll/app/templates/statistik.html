@@ -166,6 +166,7 @@ table.data-table td:first-child{text-align:left;}
     </div>
     <div class="kpi-row" id="elec-kpi"></div>
     <p class="section-title" id="elec-chart1-title">Ø Verbrauch &amp; Einspeisung pro Tag</p>
+    <label><input type="checkbox" id="chartElec-log" onchange="renderElec()"> Logarithmische Y-Achse</label>
     <div class="chart-wrap"><canvas id="chartElec"></canvas></div>
     <p class="section-title">Ø Verbrauch pro Tag – Verlauf</p>
     <p class="muted" style="font-size:.78rem;margin-top:-.3rem;margin-bottom:.6rem;">Jeder Punkt = Ø des Intervalls zwischen zwei Ablesungen</p>
@@ -175,12 +176,15 @@ table.data-table td:first-child{text-align:left;}
     <div class="filter-row">
       <div><label>Zusätzliche Verbrauchskurve</label>
         <select id="hp-stats-mode" onchange="renderHpStats()">
-          <option value="both">Wärmepumpe + Gesamtverbrauch</option>
+          <option value="both">Beide – separate Linien</option>
           <option value="hp">Nur Wärmepumpe</option>
           <option value="total">Nur Gesamtverbrauch</option>
+          <option value="without">Ohne Wärmepumpe (Gesamt − WP)</option>
+          <option value="stacked">Beide – gestapelt</option>
         </select>
       </div>
     </div>
+    <label><input type="checkbox" id="chartHpStats-log" onchange="renderHpStats()"> Logarithmische Y-Achse</label>
     <div class="kpi-row" id="hp-stats-kpi"></div>
     <p class="muted" style="font-size:.78rem;">Wärmepumpenwerte nutzen bestätigte Tageswerte, Stundenmessungen oder integrierte 15-Minuten-Kurvenschätzungen. Der Haushaltsverbrauch wird aus den absoluten Stromzähler-Differenzen als Tagesdurchschnitt des jeweiligen Ableseintervalls interpoliert. Das ist kein separat gemessener Tageswert.</p>
     <div class="chart-wrap"><canvas id="chartHpStats"></canvas></div>
@@ -354,7 +358,7 @@ function makeTimeChart(canvasId, datasets, yLabel, tooltipSuffix='') {
       scales:{
         x:{type:'time',time:{tooltipFormat:'yyyy-MM-dd',displayFormats:{day:'dd.MM',month:'MMM yy',year:'yyyy'}},
            ticks:{maxTicksLimit:14,maxRotation:40}},
-        y:{title:{display:true,text:yLabel},ticks:{precision:3}}
+        y:{type:(document.getElementById(canvasId+'-log')?.checked?'logarithmic':'linear'),beginAtZero:true,title:{display:true,text:yLabel},ticks:{precision:3}}
       },
       plugins:{legend:{display:datasets.length>1},
         tooltip:{callbacks:{afterLabel(ctx){
@@ -545,24 +549,24 @@ function renderHpStats(){
   const fmt=v=>v.toLocaleString('de-DE',{maximumFractionDigits:1});
   const kpi=document.getElementById('hp-stats-kpi');
   if(kpi) kpi.innerHTML=
+    (inconsistentDays.length?`<div class="kpi red"><div class="val">⚠ ${inconsistentDays.length}</div><div class="lbl">Tage: WP größer als Gesamtverbrauch – Differenz nicht berechnet</div></div>`:'')+
     `<div class="kpi orange"><div class="val">${fmt(hpTotal)} kWh</div><div class="lbl">Wärmepumpe im Zeitraum · ${hpDays} Tage</div></div>`+
     `<div class="kpi orange"><div class="val">${hpDays?fmt(hpTotal/hpDays):'—'} kWh</div><div class="lbl">Wärmepumpe Ø je Datentag</div></div>`+
     `<div class="kpi red"><div class="val">${fmt(householdTotal)} kWh</div><div class="lbl">Haushalt gesamt · ${householdDays} interpolierte Tage</div></div>`+
     `<div class="kpi red"><div class="val">${householdDays?fmt(householdTotal/householdDays):'—'} kWh</div><div class="lbl">Haushalt Ø je Tag aus Zählerintervallen</div></div>`;
 
   const dates=[...new Set([...hpByDate.keys(),...meterDaily.keys()])].sort();
+  const hpSeries=dates.map(d=>hpByDate.has(d)?hpByDate.get(d).value:null);
+  const totalSeries=dates.map(d=>meterDaily.has(d)?meterDaily.get(d):null);
+  const inconsistentDays=dates.filter((d,i)=>totalSeries[i]!=null&&hpSeries[i]!=null&&hpSeries[i]>totalSeries[i]+0.001);
+  const withoutSeries=dates.map((d,i)=>totalSeries[i]!=null&&hpSeries[i]!=null&&hpSeries[i]<=totalSeries[i]+0.001?Math.max(0,totalSeries[i]-hpSeries[i]):null);
   const datasets=[];
-  if(mode!=='total') datasets.push({
-    label:'Wärmepumpe (kWh/Tag; Messwert oder Kurven-Schätzung)',
-    data:dates.map(d=>({x:d,y:hpByDate.has(d)?hpByDate.get(d).value:null})),
-    borderColor:'#f97316',backgroundColor:'#fdba7444',tension:.25,pointRadius:2,spanGaps:false
-  });
-  if(mode!=='hp') datasets.push({
-    label:'Haushalt gesamt (kWh/Tag; Zählerintervall-Ø)',
-    data:dates.map(d=>({x:d,y:meterDaily.has(d)?meterDaily.get(d):null})),
-    borderColor:'#ef4444',backgroundColor:'#fca5a544',tension:0,pointRadius:2,spanGaps:false
-  });
-  if(datasets.length) makeTimeChart('chartHpStats',datasets,'kWh/Tag');
+  const stacked=mode==='stacked';
+  if(mode==='hp'||mode==='both'||stacked) datasets.push({label:'Wärmepumpe (kWh/Tag)',data:dates.map((d,i)=>({x:d,y:hpSeries[i]})),borderColor:'#269b55',backgroundColor:'#269b5580',tension:0,pointRadius:2,spanGaps:false,stack:stacked?'consumption':undefined,type:stacked?'bar':'line'});
+  if(mode==='without'||mode==='both'||stacked) datasets.push({label:mode==='both'?'Gesamtverbrauch (kWh/Tag)':'Ohne Wärmepumpe (Gesamt − WP)',data:dates.map((d,i)=>({x:d,y:mode==='both'?totalSeries[i]:withoutSeries[i]})),borderColor:'#3976c6',backgroundColor:'#3976c680',tension:0,pointRadius:2,spanGaps:false,stack:stacked?'consumption':undefined,type:stacked?'bar':'line'});
+  if(mode==='total') datasets.push({label:'Gesamtverbrauch (kWh/Tag)',data:dates.map((d,i)=>({x:d,y:totalSeries[i]})),borderColor:'#ef4444',pointRadius:2,spanGaps:false});
+  makeTimeChart('chartHpStats',datasets,'kWh/Tag');
+  if(stacked && charts.chartHpStats){charts.chartHpStats.options.scales.y.stacked=true;charts.chartHpStats.update();}
 }
 // ==================== WASSER TAB ====================
 const ALL_WATER=computeDeltas(RAW.water,'date','water_meter_m3');

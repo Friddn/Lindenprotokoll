@@ -654,6 +654,33 @@ def heatpump_analysis():
                 message = f"Screenshot #{shot_id} gelöscht. Bereits bestätigte Tageswerte bleiben erhalten."
             except Exception as exc:
                 message = "Screenshot konnte nicht gelöscht werden: " + str(exc)
+        elif action == "delete_all_screenshot_duplicates":
+            import hashlib
+            from ocr_extract import parse_ocr_fields
+            removed = 0
+            with connect() as conn:
+                rows = conn.execute("SELECT id,stored_path,graph_date,ocr_text FROM graph_screenshots ORDER BY id").fetchall()
+                seen_hashes, seen_readings = set(), set()
+                for row in rows:
+                    try:
+                        digest = hashlib.sha256(Path(row["stored_path"]).read_bytes()).hexdigest()
+                    except OSError:
+                        digest = None
+                    fields = parse_ocr_fields(row["ocr_text"] or "")
+                    day = row["graph_date"] or fields.get("date")
+                    electricity, thermal = fields.get("electricity_kwh"), fields.get("thermal_kwh")
+                    reading_key = (day, electricity, thermal) if day and (electricity is not None or thermal is not None) else None
+                    duplicate = bool(digest and digest in seen_hashes) or bool(reading_key and reading_key in seen_readings)
+                    if duplicate:
+                        conn.execute("DELETE FROM hp_graph_points WHERE screenshot_id=?", (row["id"],))
+                        conn.execute("DELETE FROM graph_screenshots WHERE id=?", (row["id"],))
+                        try: Path(row["stored_path"]).unlink(missing_ok=True)
+                        except OSError: pass
+                        removed += 1
+                    else:
+                        if digest: seen_hashes.add(digest)
+                        if reading_key: seen_readings.add(reading_key)
+            message = f"{removed} Wärmepumpen-Screenshot-Dubletten entfernt (identische Datei oder gleiches erkanntes Datum mit gleichen OCR-Tageswerten). Bestätigte Tageswerte bleiben erhalten."
         elif action == "ocr_screenshot":
             # Optional local OCR. Tesseract is not required for the app to run.
             try:
@@ -700,8 +727,12 @@ def heatpump_analysis():
                     conn.execute("INSERT INTO daily_hp_totals(date,electricity_kwh,thermal_kwh,source,screenshot_id,confidence) VALUES(?,?,?,'screenshot-manual',?,'confirmed') "
                                  "ON CONFLICT(date) DO UPDATE SET electricity_kwh=excluded.electricity_kwh,thermal_kwh=excluded.thermal_kwh,source=excluded.source,screenshot_id=excluded.screenshot_id,confidence='confirmed',updated_at=CURRENT_TIMESTAMP",
                                  (day, electricity, thermal, shot_id))
-                    conn.execute("UPDATE graph_screenshots SET graph_date=? WHERE id=?", (day, shot_id))
+                    conn.execute("UPDATE graph_screenshots SET graph_date=?, approved=1 WHERE id=?", (day, shot_id))
+                    next_shot = conn.execute("SELECT id FROM graph_screenshots WHERE id<>? AND COALESCE(ocr_text,'')<>'' AND COALESCE(approved,0)=0 ORDER BY id LIMIT 1", (shot_id,)).fetchone()
                 message = f"Bestätigte Tageswerte für {day} gespeichert. Diese Werte sind maßgeblich für die Tagesstatistik."
+                if next_shot:
+                    return redirect(url_for("heatpump_analysis", screenshot_filter="review", review_id=next_shot["id"]))
+                message += " Alle OCR-Fälle sind bestätigt."
             except Exception as exc:
                 message = "Tageswerte konnten nicht gespeichert werden: " + str(exc)
         elif action == "digitize_screenshot":
@@ -844,6 +875,12 @@ def heatpump_analysis():
         shots = [x for x in shots if x.get("status") == "digitized"]
     elif screenshot_filter == "duplicates":
         shots = [x for x in shots if x.get("duplicate")]
+    elif screenshot_filter == "review":
+        review_id = request.args.get("review_id", type=int)
+        if review_id:
+            shots = [x for x in shots if x["id"] == review_id]
+        else:
+            shots = [x for x in shots if x.get("ocr_text") and not x.get("approved")]
     from ocr_extract import parse_ocr_fields
     for shot in shots:
         shot["ocr_fields"] = parse_ocr_fields(shot.get("ocr_text") or "")

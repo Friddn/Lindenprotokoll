@@ -3,12 +3,14 @@
 <nav class="subnav"><a href="#screenshots">Screenshot-Verwaltung</a> · <a href="#screenshots">OCR & Prüfung</a> · <a href="#screenshots">Dubletten</a></nav>
 {% if message %}<p class="message info">{{ message }}</p>{% endif %}
 <p>Lokale Zusatzdaten. Bestehende Stromzähler-Ablesungen und historische Einträge werden nicht verändert.</p>
-<section class="card">
+<details class="card"><summary><strong>Stündlicher Verlauf – Wärmepumpe und Tornesch</strong></summary>
+<section>
 <h3>Stündlicher Verlauf – Wärmepumpe und Tornesch</h3>
 <div class="filter-row"><label><input type="checkbox" id="showhp" checked> Wärmepumpe</label><label><input type="checkbox" id="showtemp" checked> Außentemperatur</label><label><input type="checkbox" id="showest" checked> Screenshot-Kurven (Schätzwerte)</label></div>
 <canvas id="hpChart" height="110"></canvas>
 <p class="muted">Linke Achse: Wärmepumpen-Strom je Stunde (kWh, numerisch entsprechend mittlerer kW-Leistung) und rekonstruierte Kurven (kW); rechte Achse: °C. Fehlende Stunden bleiben Lücken. Screenshot-Kurven sind Schätzwerte.</p>
-</section>
+</section></details>
+<details class="card"><summary><strong>Täglicher Stromverbrauch – Wärmepumpe / ohne Wärmepumpe / gesamt</strong></summary>
 <section class="card"><h3>Täglicher Stromverbrauch – Wärmepumpe / ohne Wärmepumpe / gesamt</h3>
 <p>Die Tageswerte werden getrennt gespeichert. Gesamt = Wärmepumpe + zusätzlicher Verbrauch ohne Wärmepumpe. Fehlende Werte bleiben leer.</p>
 <label><input type="radio" name="dailyMode" value="both" checked> Beides</label>
@@ -17,16 +19,20 @@
 <label><input type="radio" name="dailyMode" value="total"> Gesamt</label>
 <label><input type="radio" name="dailyMode" value="stacked"> Beide – gestapelt</label>
 <label><input type="checkbox" id="dailyLog"> Logarithmische Y-Achse</label>
-<canvas id="dailyElecChart" height="100"></canvas></section>
+<canvas id="dailyElecChart" height="100"></canvas></section></details>
+<details class="card"><summary><strong>CSV-Import – stündliche Wärmepumpenwerte</strong></summary>
 <section class="card"><h3>CSV-Import – stündliche Wärmepumpenwerte</h3>
 <p>Spalten: <code>timestamp,electricity_kwh,thermal_kwh</code>. Zeitstempel lokal in Europe/Berlin, z. B. <code>2026-11-12T13:00</code>. Werte sind Energie je Stunde (kWh), nicht momentane kW-Leistung.</p>
-<form method="post" enctype="multipart/form-data"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="import_hp_csv"><input type="file" name="csv_file" accept=".csv" required><button>Wärmepumpen-CSV importieren</button></form></section>
+<form method="post" enctype="multipart/form-data"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="import_hp_csv"><input type="file" name="csv_file" accept=".csv" required><button>Wärmepumpen-CSV importieren</button></form></section></details>
+<details class="card"><summary><strong>Tornesch – stündliche Außentemperatur</strong></summary>
 <section class="card"><h3>Tornesch – stündliche Außentemperatur</h3>
 <p>Automatischer Abruf der historischen Stundenwerte ab 2025 über Open-Meteo (Archivmodell ERA5/ERA5-Land), Standort Tornesch. Der Abruf benötigt Internetzugang des Add-ons; danach liegen die Werte lokal in SQLite.</p>
 <form method="post"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="fetch_weather"><label>Von <input type="date" name="start_date" value="2025-01-01" required></label><label>Bis <input type="date" name="end_date" required></label><button>Historische Wetterdaten laden</button></form>
-<p>Alternativ CSV-Import. Spalten: <code>timestamp,temperature_c</code>. Importiere historische Stundenwerte ab 2025. So bleiben Datenquelle und Import nachvollziehbar und die App benötigt keinen dauerhaften Wetter-API-Aufruf.</p><form method="post" enctype="multipart/form-data"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="import_weather_csv"><input type="file" name="csv_file" accept=".csv" required><button>Temperatur-CSV importieren</button></form></section>
-<section class="card"><h3>Zusätzlicher Stromverbrauch ohne Wärmepumpe</h3><p>Spalten: <code>date,kwh,notes</code>. Diese Werte müssen ausdrücklich den Tagesverbrauch OHNE Wärmepumpe enthalten. Sie werden nicht auf jede Stunde verteilt. Tageswerte werden als eigener Verbrauch gespeichert und können in den Ansichten ein- oder ausgeblendet werden.</p><form method="post" enctype="multipart/form-data"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="import_daily_csv"><input type="file" name="csv_file" accept=".csv" required><button>Tageswerte importieren</button></form><p>Vorhandene Werte: {{ daily|length }} Tage.</p></section>
+<p>Alternativ CSV-Import. Spalten: <code>timestamp,temperature_c</code>. Importiere historische Stundenwerte ab 2025. So bleiben Datenquelle und Import nachvollziehbar und die App benötigt keinen dauerhaften Wetter-API-Aufruf.</p><form method="post" enctype="multipart/form-data"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="import_weather_csv"><input type="file" name="csv_file" accept=".csv" required><button>Temperatur-CSV importieren</button></form></section></details>
+<details class="card"><summary><strong>Zusätzlicher Stromverbrauch ohne Wärmepumpe</strong></summary>
+<section class="card"><h3>Zusätzlicher Stromverbrauch ohne Wärmepumpe</h3><p>Spalten: <code>date,kwh,notes</code>. Diese Werte müssen ausdrücklich den Tagesverbrauch OHNE Wärmepumpe enthalten. Sie werden nicht auf jede Stunde verteilt. Tageswerte werden als eigener Verbrauch gespeichert und können in den Ansichten ein- oder ausgeblendet werden.</p><form method="post" enctype="multipart/form-data"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="import_daily_csv"><input type="file" name="csv_file" accept=".csv" required><button>Tageswerte importieren</button></form><p>Vorhandene Werte: {{ daily|length }} Tage.</p></section></details>
 <section class="card" id="screenshots"><h3>Screenshot-Verwaltung</h3>
+<div class="filter-row"><button type="button" id="collapseAllSections">Alle Bereiche einklappen</button><button type="button" id="expandAllSections">Alle Bereiche ausklappen</button></div>
 <p>Mehrere Screenshots gleichzeitig hochladen, OCR gesammelt ausführen, Ergebnisse prüfen und Dubletten entfernen.</p>
 <div class="filter-row">
 <a class="button" href="{{ url_for('heatpump_analysis', screenshot_filter='all') }}">Alle</a>
@@ -42,15 +48,17 @@
 <form method="post" enctype="multipart/form-data"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="upload_screenshots"><label>Optionales Datum <input type="date" name="graph_date"></label><label>Mehrere Bilder auswählen <input type="file" name="screenshots" accept="image/png,image/jpeg,image/webp" multiple required></label><button>Screenshots hochladen</button></form>
 <form method="post" onsubmit="return confirm('OCR für alle noch nicht verarbeiteten Screenshots starten?');"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="ocr_all_screenshots"><button>OCR für alle noch nicht verarbeiteten Screenshots</button></form>
 <p class="muted">Nach dem Batch-OCR kannst du jedes Ergebnis einzeln kontrollieren, Tageswerte bestätigen und die Kurven digitalisieren. OCR und Import bleiben getrennte Schritte.</p>
-{% for shot in shots %}<details><summary>#{{ shot.id }} – {{ shot.filename }} ({{ shot.graph_date or 'Datum fehlt' }}, {{ shot.status }}){% if shot.duplicate %} · EXAKTE DUBLETTE{% endif %}</summary>
+{% for shot in shots %}<details {% if request.args.get("review_id", type=int) == shot.id %}open{% endif %}><summary>#{{ shot.id }} – {{ shot.filename }} ({{ shot.graph_date or 'Datum fehlt' }}, {{ shot.status }}){% if shot.duplicate %} · EXAKTE DUBLETTE{% endif %}</summary>
 <img src="{{ url_for('heatpump_screenshot_image', screenshot_id=shot.id) }}" alt="Screenshot {{ shot.filename }}" loading="lazy" style="display:block;max-width:100%;max-height:70vh;object-fit:contain;margin:.75rem 0;border:1px solid #d1d5db;border-radius:8px;">
 <form method="post" onsubmit="return confirm('Diesen Screenshot wirklich löschen? Bereits bestätigte Tageswerte bleiben erhalten.');"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="delete_screenshot"><input type="hidden" name="screenshot_id" value="{{ shot.id }}"><button class="danger">Screenshot löschen</button></form>
 <form method="post"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="ocr_screenshot"><input type="hidden" name="screenshot_id" value="{{ shot.id }}"><button>OCR erneut ausführen</button></form>
 {% if shot.ocr_text %}<label>OCR-Ergebnis – bitte mit Originalbild abgleichen<textarea rows="5" readonly>{{ shot.ocr_text }}</textarea></label>{% endif %}
-<form method="post"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="save_daily_screenshot_totals"><input type="hidden" name="screenshot_id" value="{{ shot.id }}"><h4>Gedruckte Tageswerte bestätigen (maßgeblich)</h4>
-<label>Datum <input type="date" name="daily_date" value="{{ shot.ocr_fields.date or shot.graph_date or '' }}" required></label>
-<label>Wärmepumpen-Strom (kWh/Tag) <input type="text" inputmode="decimal" name="daily_electricity_kwh" value="{{ shot.ocr_fields.electricity_kwh if shot.ocr_fields.electricity_kwh is not none else '' }}" placeholder="z. B. 22,75"></label>
-<label>Thermische Energie (kWh/Tag) <input type="text" inputmode="decimal" name="daily_thermal_kwh" value="{{ shot.ocr_fields.thermal_kwh if shot.ocr_fields.thermal_kwh is not none else '' }}" placeholder="z. B. 91,85"></label>
+<form method="post"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="save_daily_screenshot_totals"><input type="hidden" name="screenshot_id" value="{{ shot.id }}"><h4>Tageswerte bearbeiten / bestätigen (gespeicherte manuelle Werte haben Vorrang vor OCR)</h4>
+<label>Datum <input type="date" name="daily_date" value="{{ shot.saved_daily_date or shot.ocr_fields.date or shot.graph_date or '' }}" required></label>
+{% set shown_electricity = shot.saved_electricity_kwh if shot.saved_daily_date else shot.ocr_fields.electricity_kwh %}
+{% set shown_thermal = shot.saved_thermal_kwh if shot.saved_daily_date else shot.ocr_fields.thermal_kwh %}
+<label>Wärmepumpen-Strom (kWh/Tag) <input type="text" inputmode="decimal" name="daily_electricity_kwh" value="{{ shown_electricity if shown_electricity is not none else '' }}" placeholder="z. B. 22,75"></label>
+<label>Thermische Energie (kWh/Tag) <input type="text" inputmode="decimal" name="daily_thermal_kwh" value="{{ shown_thermal if shown_thermal is not none else '' }}" placeholder="z. B. 91,85"></label>
 <button>Save and next</button></form>
 <form method="post"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="digitize_screenshot"><input type="hidden" name="screenshot_id" value="{{ shot.id }}">
 <label>Diagramm-Datum <input type="date" name="digitize_date" value="{{ shot.graph_date or '' }}" required></label>
@@ -59,6 +67,10 @@
 {% if daily_hp %}<div style="overflow:auto"><table><tr><th>Datum</th><th>WP-Strom (kWh)</th><th>Thermisch (kWh)</th><th>Quelle</th></tr>{% for d in daily_hp %}<tr><td>{{ d.date }}</td><td>{{ d.electricity_kwh if d.electricity_kwh is not none else '–' }}</td><td>{{ d.thermal_kwh if d.thermal_kwh is not none else '–' }}</td><td>{{ d.source }}</td></tr>{% endfor %}</table></div>{% else %}<p>Noch keine bestätigten Screenshot-Tageswerte.</p>{% endif %}
 <p><strong>Erkannte Kandidaten:</strong> {{ graph_points|length }} (letzte 300). Sie bleiben als Schätzwerte gespeichert und werden nicht automatisch als Originalmesswerte in die Stundenstatistik übernommen.</p>
 {% if graph_points %}<div style="overflow:auto"><table><tr><th>Zeit</th><th>Strom kW</th><th>Wärme kW</th><th>Vertrauen</th><th>Typ</th></tr>{% for p in graph_points %}<tr><td>{{ p.ts }}</td><td>{{ p.electricity_kw if p.electricity_kw is not none else '–' }}</td><td>{{ p.thermal_kw if p.thermal_kw is not none else '–' }}</td><td>{{ p.confidence }}</td><td>{{ p.point_kind }}</td></tr>{% endfor %}</table></div>{% endif %}</section>
+<script>
+document.getElementById('collapseAllSections')?.addEventListener('click',()=>document.querySelectorAll('#screenshots details, body > details, main details.card').forEach(x=>x.open=false));
+document.getElementById('expandAllSections')?.addEventListener('click',()=>document.querySelectorAll('details.card, #screenshots details').forEach(x=>x.open=true));
+</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script><script>
 fetch('{{ url_for("heatpump_daily_data") }}').then(r=>r.json()).then(({data})=>{
 const labels=data.map(x=>x.date), hp=data.map(x=>x.hp_kwh), other=data.map(x=>x.non_hp_kwh), total=data.map(x=>x.total_kwh);

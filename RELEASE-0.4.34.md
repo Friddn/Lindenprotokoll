@@ -21,3 +21,10 @@
 - OCR-Tests: 9 erfolgreich.
 - Gesamttests: 14 erfolgreich, 1 übersprungen (realer Screenshot/Tesseract-Test ohne verfügbare Testdatei).
 - Python-Kompilierung und JavaScript-Syntaxprüfung erfolgreich.
+
+
+## Nachbesserung: manuelle Screenshot-Werte bleiben sichtbar
+- Bereits gespeicherte Tageswerte werden beim Öffnen des zugehörigen Screenshots wieder in die Bearbeitungsfelder geladen.
+- Gespeicherte manuelle Werte haben Vorrang vor vorausgefüllten OCR-Werten.
+- Auch bewusst leere Felder bleiben leer und werden nicht erneut mit alten OCR-Kandidaten befüllt, sofern bereits ein bestätigter Datensatz zum Screenshot existiert.
+- Das Speichern aktualisiert weiterhin den bestätigten Tagesdatensatz des Datums.

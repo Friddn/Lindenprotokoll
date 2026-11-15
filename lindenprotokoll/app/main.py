@@ -870,7 +870,15 @@ def heatpump_analysis():
         hp = [dict(r) for r in conn.execute("SELECT * FROM hp_hourly ORDER BY ts DESC LIMIT 500")]
         weather = [dict(r) for r in conn.execute("SELECT * FROM outdoor_hourly ORDER BY ts DESC LIMIT 500")]
         daily = [dict(r) for r in conn.execute("SELECT * FROM daily_non_hp_electricity ORDER BY date DESC LIMIT 200")]
-        shots = [dict(r) for r in conn.execute("SELECT * FROM graph_screenshots ORDER BY id DESC")]
+        shots = [dict(r) for r in conn.execute("""
+            SELECT s.*,
+                   t.date AS saved_daily_date,
+                   t.electricity_kwh AS saved_electricity_kwh,
+                   t.thermal_kwh AS saved_thermal_kwh
+            FROM graph_screenshots s
+            LEFT JOIN daily_hp_totals t ON t.screenshot_id = s.id
+            ORDER BY s.id DESC
+        """)]
         daily_hp = [dict(r) for r in conn.execute("SELECT * FROM daily_hp_totals ORDER BY date DESC LIMIT 200")]
         graph_points = [dict(r) for r in conn.execute("SELECT * FROM hp_graph_points ORDER BY ts DESC LIMIT 300")]
     import hashlib
@@ -911,7 +919,7 @@ def heatpump_analysis():
     from ocr_extract import parse_ocr_fields
     for shot in shots:
         shot["ocr_fields"] = parse_ocr_fields(shot.get("ocr_text") or "")
-    return render_template("heatpump_analysis.html", hp=hp, weather=weather, daily=daily, shots=shots, daily_hp=daily_hp, graph_points=graph_points, screenshot_filter=screenshot_filter, screenshot_from=screenshot_from, screenshot_to=screenshot_to, message=message, **base_context())
+    return render_template("heatpump_analysis.html", hp=hp, weather=weather, daily=daily, shots=shots, daily_hp=daily_hp, graph_points=graph_points, screenshot_filter=screenshot_filter, screenshot_from=screenshot_from, screenshot_to=screenshot_to, review_id=request.args.get("review_id", type=int), message=message, **base_context())
 
 @app.get("/statistik/waermepumpe/data")
 def heatpump_data():

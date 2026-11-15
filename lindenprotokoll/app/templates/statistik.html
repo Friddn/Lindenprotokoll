@@ -89,7 +89,7 @@ table.data-table td:first-child{text-align:left;}
     </p>
 
     <p class="muted" style="font-size:.83rem;margin-bottom:.75rem;">
-      Eine Beobachtung = eine Mahlzeit. Y=1 wenn innerhalb von X Stunden danach Bauchschmerzen auftraten, sonst Y=0.
+      Eine Beobachtung = ein Mahlzeit-Zeitpunkt. Mehrere Einträge derselben Person mit identischem Datum und Uhrzeit werden zu einer Mahlzeit zusammengefasst; alle enthaltenen Lebensmittel werden gemeinsam ausgewertet. Y=1 wenn innerhalb von X Stunden danach Bauchschmerzen auftraten, sonst Y=0.
     </p>
     <div class="filter-row" style="align-items:flex-end;flex-wrap:wrap;gap:.75rem;margin-bottom:.75rem;">
       <div>
@@ -151,7 +151,7 @@ table.data-table td:first-child{text-align:left;}
       <div><label>Zeitraum</label>
         <select id="elec-period" onchange="applyElecFilter();saveState()">
           <option value="90">90 Tage</option><option value="180">6 Monate</option>
-          <option value="365" selected>1 Jahr</option><option value="730">2 Jahre</option><option value="0">Alle</option><option value="custom">Eigener…</option>
+          <option value="365">1 Jahr</option><option value="730">2 Jahre</option><option value="0" selected>Alle</option><option value="custom">Eigener…</option>
         </select>
       </div>
       <div id="elec-custom-from-wrap" style="display:none"><label>Von</label><input type="date" id="elec-from" onchange="applyElecFilter();saveState()"></div>
@@ -241,7 +241,7 @@ table.data-table td:first-child{text-align:left;}
 <script>
 const RAW = {{ stats_json | safe }};
 const SHOW_PAIN_FREE = {{ 'true' if show_pain_free else 'false' }};
-const LS_KEY = 'lindenprotokoll_stats_state';
+const LS_KEY = 'lindenprotokoll_stats_state_v2';
 
 // ==================== STATE PERSISTENCE ====================
 function saveState() {
@@ -829,7 +829,8 @@ async function buildRegressionDataset() {
         : '';
       infoEl.innerHTML =
         `<strong>Datensatz aufgebaut</strong> &nbsp;|&nbsp; ` +
-        `${data.n_total} Mahlzeit-Beobachtungen: ` +
+        `${data.n_total} Mahlzeit-Beobachtungen aus ${data.n_meal_entries} Einträgen` +
+        (data.n_combined_entries > 0 ? ` (${data.n_combined_entries} zusätzliche Einträge in gleiche Mahlzeiten zusammengeführt)` : '') + `: ` +
         `<span style="color:#ef4444;font-weight:600">${data.n_pain} mit Schmerzen ≤${data.hours_after}h danach (Y=1)</span>, ` +
         `<span style="color:#10b981;font-weight:600">${data.n_no_pain} ohne Schmerzen (Y=0)</span> &nbsp;|&nbsp; ` +
         `${data.foods.length} Lebensmittelvariablen${excludedNote}<br>` +
@@ -956,8 +957,7 @@ function renderRegressionResults(data) {
   elecFiltered=filterWithOneBefore(ALL_ELEC,'date',document.getElementById('elec-period').value,document.getElementById('elec-from').value,document.getElementById('elec-to').value);
   waterFiltered=filterWithOneBefore(ALL_WATER,'date',document.getElementById('water-period').value,document.getElementById('water-from').value,document.getElementById('water-to').value);
   switchTab(tab,null);
+  loadHpStats();
 })();
 </script>
 {% endblock %}
-\n<script>/* heat-pump statistics data is loaded with the statistics page */loadHpStats();\nloadHpStats();
-</script>\n

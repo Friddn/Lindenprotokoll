@@ -1,5 +1,5 @@
 name: "Lindenprotokoll"
-version: "0.4.29"
+version: "0.4.31"
 slug: "lindenprotokoll"
 description: "Mehrzweck-Protokoll-App für Essen, Krank und Verbrauch"
 startup: application

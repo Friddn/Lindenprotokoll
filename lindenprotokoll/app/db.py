@@ -1123,26 +1123,23 @@ def build_regression_dataset(person_id=None, hours_after=4, min_occurrences=2, e
     """
     Event-based logistic regression dataset.
 
-    One row per MEAL ENTRY:
-      Y = 1 if any abdominal pain event occurred within hours_after hours AFTER that meal
-      Y = 0 if no pain occurred within that window
+    One row per meal moment: entries belonging to the same person and exact
+    date/time are combined into one observation. All foods from those entries
+    become binary variables on that observation.
 
-    Food variables are binary: 1 = that food was in this specific meal.
+    Y = 1 if any abdominal pain event occurred within hours_after hours AFTER
+    the meal moment; otherwise Y = 0.
 
-    min_occurrences: minimum number of times a food must appear across all meals
-                     to be included as a variable (filters rare foods).
-    exclude_empty_days: if True, only include no-pain meal entries from days
-                        that have at least one meal (always true per entry, kept
-                        for UI consistency — now controls whether days with meals
-                        but zero qualifying observations are skipped).
+    min_occurrences counts meal moments containing a food, not individual
+    database entries. This prevents splitting one meal across several entries
+    from artificially increasing a food's frequency.
     """
     import datetime as dt
 
     with connect() as conn:
         person_clause = "AND e.person_id = ?" if person_id else ""
-        person_args   = [person_id] if person_id else []
+        person_args = [person_id] if person_id else []
 
-        # All pain events with datetime
         pain_rows = conn.execute(f"""
             SELECT e.entry_id, e.date, e.time, e.person_id
             FROM entries e
@@ -1150,7 +1147,6 @@ def build_regression_dataset(person_id=None, hours_after=4, min_occurrences=2, e
             ORDER BY e.date, e.time
         """, person_args).fetchall()
 
-        # All meal entries with their foods
         meal_rows = conn.execute(f"""
             SELECT e.entry_id, e.date, e.time, e.person_id,
                    GROUP_CONCAT(f.food_name, '||') AS foods
@@ -1159,53 +1155,64 @@ def build_regression_dataset(person_id=None, hours_after=4, min_occurrences=2, e
             LEFT JOIN food_items_master f ON l.food_id = f.food_id
             WHERE e.subtype = 'meal' {person_clause}
             GROUP BY e.entry_id
-            ORDER BY e.date, e.time
+            ORDER BY e.date, e.time, e.entry_id
         """, person_args).fetchall()
 
-    # Parse pain datetimes
     pain_events = []
     for r in pain_rows:
         try:
-            pain_events.append(dt.datetime.fromisoformat(f"{r['date']}T{r['time']}"))
+            pain_events.append((r['person_id'], dt.datetime.fromisoformat(f"{r['date']}T{r['time']}")))
         except Exception:
-            pass
+            continue
 
-    # Build dataset: one row per meal entry
-    raw_rows = []
-    food_counts = {}
-
+    # Aggregate entries into one meal observation per person + parsed timestamp.
+    meal_groups = {}
     for r in meal_rows:
         try:
             meal_dt = dt.datetime.fromisoformat(f"{r['date']}T{r['time']}")
         except Exception:
             continue
 
-        foods_in_meal = []
+        key = (r['person_id'], meal_dt)
+        if key not in meal_groups:
+            meal_groups[key] = {
+                'meal_dt': meal_dt,
+                'date': r['date'],
+                'time': r['time'],
+                'person_id': r['person_id'],
+                'foods': set(),
+                'entry_count': 0,
+            }
+        group = meal_groups[key]
+        group['entry_count'] += 1
         if r['foods']:
-            foods_in_meal = [f.strip() for f in r['foods'].split('||') if f.strip()]
+            group['foods'].update(f.strip() for f in r['foods'].split('||') if f.strip())
 
-        # Y = 1 if any pain within hours_after hours after this meal
+    raw_rows = []
+    food_counts = {}
+    for group in meal_groups.values():
+        meal_dt = group['meal_dt']
         window_end = meal_dt + dt.timedelta(hours=hours_after)
-        had_pain = any(meal_dt < pe <= window_end for pe in pain_events)
-
+        had_pain = any(
+            pain_person_id == group['person_id']
+            and meal_dt < pain_dt <= window_end
+            for pain_person_id, pain_dt in pain_events
+        )
         raw_rows.append({
             'meal_dt': meal_dt,
-            'date': r['date'],
-            'time': r['time'],
+            'date': group['date'],
+            'time': group['time'],
             'y': 1 if had_pain else 0,
-            'foods': set(foods_in_meal),
+            'foods': group['foods'],
         })
-
-        for food in foods_in_meal:
+        for food in group['foods']:
             food_counts[food] = food_counts.get(food, 0) + 1
 
-    # Filter foods by minimum occurrences
     all_foods = sorted(
         [f for f, cnt in food_counts.items() if cnt >= min_occurrences],
         key=str.casefold
     )
 
-    # Build final dataset
     dataset = []
     for row in raw_rows:
         obs = {'y': row['y'], 'date': row['date'], 'time': row['time']}
@@ -1213,11 +1220,11 @@ def build_regression_dataset(person_id=None, hours_after=4, min_occurrences=2, e
             obs[food] = 1 if food in row['foods'] else 0
         dataset.append(obs)
 
-    n_pain    = sum(1 for r in dataset if r['y'] == 1)
+    n_pain = sum(1 for r in dataset if r['y'] == 1)
     n_no_pain = sum(1 for r in dataset if r['y'] == 0)
-
-    # Foods excluded due to rarity
     excluded = [f for f, cnt in food_counts.items() if cnt < min_occurrences]
+    n_meal_entries = len(meal_rows)
+    n_meal_groups = len(meal_groups)
 
     return {
         'dataset': dataset,
@@ -1229,6 +1236,9 @@ def build_regression_dataset(person_id=None, hours_after=4, min_occurrences=2, e
         'person_id': person_id,
         'excluded_foods': excluded,
         'n_excluded': len(excluded),
+        'n_meal_entries': n_meal_entries,
+        'n_meal_groups': n_meal_groups,
+        'n_combined_entries': n_meal_entries - n_meal_groups,
     }
 
 

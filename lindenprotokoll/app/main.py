@@ -955,6 +955,8 @@ def regression_dataset():
         "n_pain":       result["n_pain"],
         "n_no_pain":    result["n_no_pain"],
         "n_total":      len(result["dataset"]),
+        "n_meal_entries": result["n_meal_entries"],
+        "n_combined_entries": result["n_combined_entries"],
         "foods":        result["foods"],
         "hours_after":  result["hours_after"],
         "n_excluded":   result["n_excluded"],

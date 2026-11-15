@@ -727,7 +727,11 @@ def heatpump_analysis():
                 def optional_nonnegative(field):
                     raw = request.form.get(field, "").strip().replace("\u202f", "").replace("\xa0", "").replace(" ", "")
                     if not raw: return None
-                    # German decimal comma; dots are thousands separators when a comma exists.
+                    # Accept German decimal comma (22,75), decimal point (22.75),
+                    # and German grouped values (1.234,56). A dot without comma
+                    # remains a decimal point; only dots before a comma are grouping.
+                    if not re.fullmatch(r"\\d+(?:[.,]\\d+)?", raw) and not re.fullmatch(r"\\d{1,3}(?:\\.\\d{3})+,\\d+", raw):
+                        raise ValueError("Bitte eine gültige Zahl eingeben (z. B. 22,75).")
                     if "," in raw:
                         raw = raw.replace(".", "").replace(",", ".")
                     value = float(raw)

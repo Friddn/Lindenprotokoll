@@ -164,7 +164,10 @@ def init_db() -> None:
         if "confidence" not in daily_hp_cols:
             conn.execute("ALTER TABLE daily_hp_totals ADD COLUMN confidence TEXT NOT NULL DEFAULT 'confirmed'")
         if "updated_at" not in daily_hp_cols:
-            conn.execute("ALTER TABLE daily_hp_totals ADD COLUMN updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP")
+            # SQLite does not allow CURRENT_TIMESTAMP as a non-constant
+            # DEFAULT when adding a column to an existing table.
+            conn.execute("ALTER TABLE daily_hp_totals ADD COLUMN updated_at TEXT")
+            conn.execute("UPDATE daily_hp_totals SET updated_at=CURRENT_TIMESTAMP WHERE updated_at IS NULL")
 
         screenshot_cols = {r["name"] for r in conn.execute("PRAGMA table_info(graph_screenshots)")}
         if "ocr_text" not in screenshot_cols:

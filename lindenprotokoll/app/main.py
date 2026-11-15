@@ -583,6 +583,24 @@ def statistik():
 
 
 
+@app.get("/statistik/waermepumpe/screenshot/<int:screenshot_id>")
+def heatpump_screenshot_image(screenshot_id):
+    """Serve an uploaded heat-pump screenshot by database ID, confined to its storage folder."""
+    from db import connect
+    from flask import abort
+    data_dir = Path(os.environ.get("DATA_DIR", "/data")).resolve()
+    upload_dir = (data_dir / "graph_screenshots").resolve()
+    with connect() as conn:
+        row = conn.execute("SELECT stored_path FROM graph_screenshots WHERE id=?", (screenshot_id,)).fetchone()
+    if not row:
+        abort(404)
+    image_path = Path(row["stored_path"]).resolve()
+    if image_path.parent != upload_dir or not image_path.is_file():
+        abort(404)
+    import mimetypes
+    return send_file(str(image_path), mimetype=mimetypes.guess_type(str(image_path))[0] or "application/octet-stream")
+
+
 @app.route("/statistik/waermepumpe", methods=["GET", "POST"])
 def heatpump_analysis():
     """Local import and review for hourly heat-pump/weather data and graph images."""
@@ -881,10 +899,16 @@ def heatpump_analysis():
             shots = [x for x in shots if x["id"] == review_id]
         else:
             shots = [x for x in shots if x.get("ocr_text") and not x.get("approved")]
+    screenshot_from = request.args.get("screenshot_from", "").strip()
+    screenshot_to = request.args.get("screenshot_to", "").strip()
+    if screenshot_from:
+        shots = [x for x in shots if (x.get("graph_date") or str(x.get("created_at") or "")[:10]) >= screenshot_from]
+    if screenshot_to:
+        shots = [x for x in shots if (x.get("graph_date") or str(x.get("created_at") or "")[:10]) <= screenshot_to]
     from ocr_extract import parse_ocr_fields
     for shot in shots:
         shot["ocr_fields"] = parse_ocr_fields(shot.get("ocr_text") or "")
-    return render_template("heatpump_analysis.html", hp=hp, weather=weather, daily=daily, shots=shots, daily_hp=daily_hp, graph_points=graph_points, screenshot_filter=screenshot_filter, message=message, **base_context())
+    return render_template("heatpump_analysis.html", hp=hp, weather=weather, daily=daily, shots=shots, daily_hp=daily_hp, graph_points=graph_points, screenshot_filter=screenshot_filter, screenshot_from=screenshot_from, screenshot_to=screenshot_to, message=message, **base_context())
 
 @app.get("/statistik/waermepumpe/data")
 def heatpump_data():

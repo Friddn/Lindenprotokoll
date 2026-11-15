@@ -547,6 +547,13 @@ function renderHpStats(){
   const householdTotal=meterValues.reduce((a,v)=>a+v,0);
   const householdDays=meterValues.length;
   const fmt=v=>v.toLocaleString('de-DE',{maximumFractionDigits:1});
+
+
+  const dates=[...new Set([...hpByDate.keys(),...meterDaily.keys()])].sort();
+  const hpSeries=dates.map(d=>hpByDate.has(d)?hpByDate.get(d).value:null);
+  const totalSeries=dates.map(d=>meterDaily.has(d)?meterDaily.get(d):null);
+  const inconsistentDays=dates.filter((d,i)=>totalSeries[i]!=null&&hpSeries[i]!=null&&hpSeries[i]>totalSeries[i]+0.001);
+  const withoutSeries=dates.map((d,i)=>totalSeries[i]!=null&&hpSeries[i]!=null&&hpSeries[i]<=totalSeries[i]+0.001?Math.max(0,totalSeries[i]-hpSeries[i]):null);
   const kpi=document.getElementById('hp-stats-kpi');
   if(kpi) kpi.innerHTML=
     (inconsistentDays.length?`<div class="kpi red"><div class="val">⚠ ${inconsistentDays.length}</div><div class="lbl">Tage: WP größer als Gesamtverbrauch – Differenz nicht berechnet</div></div>`:'')+
@@ -555,11 +562,6 @@ function renderHpStats(){
     `<div class="kpi red"><div class="val">${fmt(householdTotal)} kWh</div><div class="lbl">Haushalt gesamt · ${householdDays} interpolierte Tage</div></div>`+
     `<div class="kpi red"><div class="val">${householdDays?fmt(householdTotal/householdDays):'—'} kWh</div><div class="lbl">Haushalt Ø je Tag aus Zählerintervallen</div></div>`;
 
-  const dates=[...new Set([...hpByDate.keys(),...meterDaily.keys()])].sort();
-  const hpSeries=dates.map(d=>hpByDate.has(d)?hpByDate.get(d).value:null);
-  const totalSeries=dates.map(d=>meterDaily.has(d)?meterDaily.get(d):null);
-  const inconsistentDays=dates.filter((d,i)=>totalSeries[i]!=null&&hpSeries[i]!=null&&hpSeries[i]>totalSeries[i]+0.001);
-  const withoutSeries=dates.map((d,i)=>totalSeries[i]!=null&&hpSeries[i]!=null&&hpSeries[i]<=totalSeries[i]+0.001?Math.max(0,totalSeries[i]-hpSeries[i]):null);
   const datasets=[];
   const stacked=mode==='stacked';
   if(mode==='hp'||mode==='both'||stacked) datasets.push({label:'Wärmepumpe (kWh/Tag)',data:dates.map((d,i)=>({x:d,y:hpSeries[i]})),borderColor:'#269b55',backgroundColor:'#269b5580',tension:0,pointRadius:2,spanGaps:false,stack:stacked?'consumption':undefined,type:stacked?'bar':'line'});

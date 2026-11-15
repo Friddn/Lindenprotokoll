@@ -26,3 +26,27 @@ def test_mobile_value_before_label_layout():
     assert parse_ocr_fields(text) == {
         'date': '2026-11-06', 'electricity_kwh': 23.3, 'thermal_kwh': 93.5
     }
+
+
+def test_wh_values_are_normalized_to_kwh():
+    got = parse_ocr_fields('03.09.2026\nStromverbrauch 19.250 Wh\nThermische Energie 97 350 Wh')
+    assert got['electricity_kwh'] == 19.25
+    assert got['thermal_kwh'] == 97.35
+
+
+def test_wh_value_before_label_and_decimal_comma():
+    got = parse_ocr_fields('03.09.2026\n19,250 kWh | Stromverbrauch\n97,35 kWh | Thermische Energie')
+    assert got['electricity_kwh'] == 19.25
+    assert got['thermal_kwh'] == 97.35
+
+
+def test_two_decimal_kwh_values_are_preserved():
+    got = parse_ocr_fields('03.09.2026\nStromverbrauch 19,25 kWh\nThermische Energie 97.35 kWh')
+    assert got['electricity_kwh'] == 19.25
+    assert got['thermal_kwh'] == 97.35
+
+
+def test_two_metrics_on_same_line_keep_their_own_values():
+    got = parse_ocr_fields('03.09.2026 Stromverbrauch 19,25 kWh Thermische Energie 97,35 kWh')
+    assert got['electricity_kwh'] == 19.25
+    assert got['thermal_kwh'] == 97.35

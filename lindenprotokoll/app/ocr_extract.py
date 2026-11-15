@@ -59,47 +59,57 @@ def parse_ocr_fields(text):
                 break
         except (ValueError, TypeError):
             pass
-    # Match both value-before-label and label-before-value layouts, and both
-    # kWh and Wh. Keep each match close to its metric label to avoid crossing.
+    # Keep each metric in its own label-delimited region. In particular, never
+    # borrow the next/previous metric's value just because it is nearby in OCR.
     number = re.compile(r"([0-9][0-9.,\t \u00a0\u202f]*)[\t \u00a0\u202f]*(kWh|Wh)\b", re.I)
     labels = {
-        "electricity_kwh": re.compile(r"(?:Stromverbrauch|W[aä]rmepumpen[- ]?Strom)", re.I),
-        "thermal_kwh": re.compile(r"Thermische\s+Energie", re.I),
+        "electricity_kwh": re.compile(r"(?:Stromverbrauch|W[aä]rmepumpen[- ]?Strom|elektrische\s+Energie)", re.I),
+        "thermal_kwh": re.compile(r"(?:Thermische\s+Energie|W[aä]rmemenge|thermische\s+Leistung)", re.I),
     }
     lines = text.splitlines()
-    for key, label_rx in labels.items():
-        found = None
-        for index, line in enumerate(lines):
-            label_match = label_rx.search(line)
-            if not label_match:
-                continue
-            # OCR can put the value before the label on the same line or
-            # on the immediately preceding line.
-            # Prefer a value following this label on the same line. This avoids
-            # assigning the previous metric's value when OCR puts both metrics
-            # on one line (e.g. "Stromverbrauch 19,2 kWh Thermische Energie 97,3 kWh").
-            same_line_after = list(number.finditer(line[label_match.end():]))
-            if same_line_after:
-                found = same_line_after[0]
-                # Match objects are relative to the substring; retain the unit/value
-                # groups only, which are the fields consumed below.
-            if found is None:
-                same_line_before = list(number.finditer(line[:label_match.start()]))
-                if same_line_before:
-                    found = same_line_before[-1]
-            if found is None and index > 0 and not any(rx.search(lines[index - 1]) for other, rx in labels.items() if other != key):
-                preceding = list(number.finditer(lines[index - 1]))
-                if preceding:
-                    found = preceding[-1]
-            if found is None:
-                for following in lines[index + 1:index + 3]:
-                    if any(rx.search(following) for rx in labels.values()):
-                        break
-                    candidates = list(number.finditer(following))
-                    if candidates:
-                        found = candidates[0]
-                        break
-            if found:
-                result[key] = _number(found.group(1), found.group(2))
-            break
+    all_labels = []
+    for key, rx in labels.items():
+        for match in rx.finditer(text):
+            all_labels.append((match.start(), match.end(), key))
+    all_labels.sort()
+
+    for pos, (key_rx_start, key_rx_end, key) in enumerate(all_labels):
+        previous_end = all_labels[pos - 1][1] if pos else 0
+        next_start = all_labels[pos + 1][0] if pos + 1 < len(all_labels) else len(text)
+        after = text[key_rx_end:next_start]
+        before = text[previous_end:key_rx_start]
+        # In mobile OCR the numeric value is often on the line immediately
+        # before its label. Prefer that close value over a following metric's
+        # value, which may appear before the next label.
+        preceding = list(number.finditer(before))
+        chosen = None
+        if preceding:
+            candidate = preceding[-1]
+            absolute_value_pos = previous_end + candidate.start()
+            previous_label_on_same_line = bool(pos and
+                text.rfind("\n", 0, absolute_value_pos) == text.rfind("\n", 0, all_labels[pos-1][1]))
+            if not previous_label_on_same_line and before[candidate.end():].count("\n") <= 1:
+                chosen = candidate
+        if chosen is None:
+            following = list(number.finditer(after))
+            if following:
+                chosen = following[0]
+        if chosen is not None:
+            result[key] = _number(chosen.group(1), chosen.group(2))
+
+    # OCR engines sometimes put the value on the immediately adjacent line.
+    # Only use that fallback if the adjacent line contains a number and no
+    # competing metric label; this is deliberately conservative.
+    if not all_labels:
+        for key, rx in labels.items():
+            for i, line in enumerate(lines):
+                if not rx.search(line):
+                    continue
+                if i > 0 and not any(other.search(lines[i-1]) for other in labels.values()):
+                    m = list(number.finditer(lines[i-1]))
+                    if m: result[key] = _number(m[-1].group(1), m[-1].group(2))
+                if result[key] is None and i + 1 < len(lines) and not any(other.search(lines[i+1]) for other in labels.values()):
+                    m = list(number.finditer(lines[i+1]))
+                    if m: result[key] = _number(m[0].group(1), m[0].group(2))
+                break
     return result

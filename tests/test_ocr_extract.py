@@ -50,3 +50,15 @@ def test_two_metrics_on_same_line_keep_their_own_values():
     got = parse_ocr_fields('03.09.2026 Stromverbrauch 19,25 kWh Thermische Energie 97,35 kWh')
     assert got['electricity_kwh'] == 19.25
     assert got['thermal_kwh'] == 97.35
+
+
+def test_thermal_value_is_never_used_as_electricity_without_electricity_label():
+    got = parse_ocr_fields('03.09.2026\nThermische Energie 97,35 kWh')
+    assert got['electricity_kwh'] is None
+    assert got['thermal_kwh'] == 97.35
+
+
+def test_missing_electricity_label_does_not_borrow_thermal_value():
+    got = parse_ocr_fields('03.09.2026\n97,35 kWh\nThermische Energie')
+    assert got['electricity_kwh'] is None
+    assert got['thermal_kwh'] == 97.35

@@ -725,8 +725,11 @@ def heatpump_analysis():
                 shot_id = int(request.form.get("screenshot_id"))
                 day = request.form.get("daily_date", "").strip()
                 def optional_nonnegative(field):
-                    raw = request.form.get(field, "").strip().replace(",", ".")
+                    raw = request.form.get(field, "").strip().replace("\u202f", "").replace("\xa0", "").replace(" ", "")
                     if not raw: return None
+                    # German decimal comma; dots are thousands separators when a comma exists.
+                    if "," in raw:
+                        raw = raw.replace(".", "").replace(",", ".")
                     value = float(raw)
                     if not __import__("math").isfinite(value) or value < 0:
                         raise ValueError("Tageswerte müssen gültige, nicht-negative Zahlen sein.")

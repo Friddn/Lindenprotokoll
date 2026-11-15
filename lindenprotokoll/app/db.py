@@ -156,6 +156,16 @@ def init_db() -> None:
         );
         """)
         # Additive migrations for screenshot OCR and authoritative daily totals.
+        # Existing installations may have an older daily_hp_totals table without
+        # the screenshot linkage columns used by the screenshot review page.
+        daily_hp_cols = {r["name"] for r in conn.execute("PRAGMA table_info(daily_hp_totals)")}
+        if "screenshot_id" not in daily_hp_cols:
+            conn.execute("ALTER TABLE daily_hp_totals ADD COLUMN screenshot_id INTEGER")
+        if "confidence" not in daily_hp_cols:
+            conn.execute("ALTER TABLE daily_hp_totals ADD COLUMN confidence TEXT NOT NULL DEFAULT 'confirmed'")
+        if "updated_at" not in daily_hp_cols:
+            conn.execute("ALTER TABLE daily_hp_totals ADD COLUMN updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP")
+
         screenshot_cols = {r["name"] for r in conn.execute("PRAGMA table_info(graph_screenshots)")}
         if "ocr_text" not in screenshot_cols:
             conn.execute("ALTER TABLE graph_screenshots ADD COLUMN ocr_text TEXT")

@@ -20,6 +20,21 @@ from device import detect_device_type
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
+
+def format_de_number(value):
+    """Format numeric values using German decimal and thousands separators."""
+    if value is None or value == "":
+        return ""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return value
+    if not math.isfinite(number):
+        return value
+    rendered = f"{number:,.2f}"
+    return rendered.replace(",", "_").replace(".", ",").replace("_", ".")
+
+app.jinja_env.filters["de_number"] = format_de_number
 app.config.update(
     MAX_CONTENT_LENGTH=15 * 1024 * 1024,
     SESSION_COOKIE_HTTPONLY=True,
@@ -730,7 +745,7 @@ def heatpump_analysis():
                     # Accept German decimal comma (22,75), decimal point (22.75),
                     # and German grouped values (1.234,56). A dot without comma
                     # remains a decimal point; only dots before a comma are grouping.
-                    if not re.fullmatch(r"\\d+(?:[.,]\\d+)?", raw) and not re.fullmatch(r"\\d{1,3}(?:\\.\\d{3})+,\\d+", raw):
+                    if not re.fullmatch(r"\d+(?:[.,]\d+)?", raw) and not re.fullmatch(r"\d{1,3}(?:\.\d{3})+,\d+", raw):
                         raise ValueError("Bitte eine gültige Zahl eingeben (z. B. 22,75).")
                     if "," in raw:
                         raw = raw.replace(".", "").replace(",", ".")

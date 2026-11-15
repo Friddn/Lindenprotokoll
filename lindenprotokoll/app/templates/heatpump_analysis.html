@@ -57,14 +57,14 @@
 <label>Datum <input type="date" name="daily_date" value="{{ shot.saved_daily_date or shot.ocr_fields.date or shot.graph_date or '' }}" required></label>
 {% set shown_electricity = shot.saved_electricity_kwh if shot.saved_daily_date else shot.ocr_fields.electricity_kwh %}
 {% set shown_thermal = shot.saved_thermal_kwh if shot.saved_daily_date else shot.ocr_fields.thermal_kwh %}
-<label>Wärmepumpen-Strom (kWh/Tag) <input type="text" inputmode="decimal" name="daily_electricity_kwh" value="{{ shown_electricity if shown_electricity is not none else '' }}" placeholder="z. B. 22,75"></label>
-<label>Thermische Energie (kWh/Tag) <input type="text" inputmode="decimal" name="daily_thermal_kwh" value="{{ shown_thermal if shown_thermal is not none else '' }}" placeholder="z. B. 91,85"></label>
+<label>Wärmepumpen-Strom (kWh/Tag) <input type="text" inputmode="decimal" name="daily_electricity_kwh" value="{{ shown_electricity|de_number if shown_electricity is not none else '' }}" placeholder="z. B. 22,75"></label>
+<label>Thermische Energie (kWh/Tag) <input type="text" inputmode="decimal" name="daily_thermal_kwh" value="{{ shown_thermal|de_number if shown_thermal is not none else '' }}" placeholder="z. B. 91,85"></label>
 <button>Save and next</button></form>
 <form method="post"><input type="hidden" name="_csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="digitize_screenshot"><input type="hidden" name="screenshot_id" value="{{ shot.id }}">
 <label>Diagramm-Datum <input type="date" name="digitize_date" value="{{ shot.graph_date or '' }}" required></label>
 <p class="muted">Plotbereich und Achsen werden automatisch erkannt. Falls die automatische Erkennung fehlschlägt, bleibt der Screenshot unverändert und kann später erneut geprüft werden.</p><button>Kurven automatisch erkennen</button></form></details>{% endfor %}
 <h4>Bestätigte Tageswerte aus Screenshots</h4>
-{% if daily_hp %}<div style="overflow:auto"><table><tr><th>Datum</th><th>WP-Strom (kWh)</th><th>Thermisch (kWh)</th><th>Quelle</th></tr>{% for d in daily_hp %}<tr><td>{{ d.date }}</td><td>{{ d.electricity_kwh if d.electricity_kwh is not none else '–' }}</td><td>{{ d.thermal_kwh if d.thermal_kwh is not none else '–' }}</td><td>{{ d.source }}</td></tr>{% endfor %}</table></div>{% else %}<p>Noch keine bestätigten Screenshot-Tageswerte.</p>{% endif %}
+{% if daily_hp %}<div style="overflow:auto"><table><tr><th>Datum</th><th>WP-Strom (kWh)</th><th>Thermisch (kWh)</th><th>Quelle</th></tr>{% for d in daily_hp %}<tr><td>{{ d.date }}</td><td>{{ d.electricity_kwh|de_number if d.electricity_kwh is not none else '–' }}</td><td>{{ d.thermal_kwh|de_number if d.thermal_kwh is not none else '–' }}</td><td>{{ d.source }}</td></tr>{% endfor %}</table></div>{% else %}<p>Noch keine bestätigten Screenshot-Tageswerte.</p>{% endif %}
 <p><strong>Erkannte Kandidaten:</strong> {{ graph_points|length }} (letzte 300). Sie bleiben als Schätzwerte gespeichert und werden nicht automatisch als Originalmesswerte in die Stundenstatistik übernommen.</p>
 {% if graph_points %}<div style="overflow:auto"><table><tr><th>Zeit</th><th>Strom kW</th><th>Wärme kW</th><th>Vertrauen</th><th>Typ</th></tr>{% for p in graph_points %}<tr><td>{{ p.ts }}</td><td>{{ p.electricity_kw if p.electricity_kw is not none else '–' }}</td><td>{{ p.thermal_kw if p.thermal_kw is not none else '–' }}</td><td>{{ p.confidence }}</td><td>{{ p.point_kind }}</td></tr>{% endfor %}</table></div>{% endif %}</section>
 <script>

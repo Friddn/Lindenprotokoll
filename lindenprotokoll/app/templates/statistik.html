@@ -416,7 +416,7 @@ const VEHICLE_COLORS=['#3b82f6','#f59e0b','#10b981','#ef4444','#8b5cf6','#ec4899
 
 // ==================== STROM TAB ====================
 // Build ALL_ELEC with independent deltas for consumption and feedin
-const ALL_ELEC = RAW.electricity.map((r,i)=>{
+const ALL_ELEC = [...RAW.electricity].sort((a,b)=>a.date.localeCompare(b.date)).map((r,i)=>{
   if(i===0) return {...r, delta:null, deltaF:null, days:null, avgPerDay:null, avgF:null};
   const prev=RAW.electricity[i-1];
   const d1=new Date(prev.date+'T12:00:00'), d2=new Date(r.date+'T12:00:00');
@@ -431,6 +431,16 @@ const ALL_ELEC = RAW.electricity.map((r,i)=>{
 });
 
 let elecFiltered=ALL_ELEC;
+function getElecDateRange(){
+  const period=document.getElementById('elec-period').value;
+  const from=document.getElementById('elec-from').value;
+  const to=document.getElementById('elec-to').value;
+  const today=new Date();
+  const isoToday=new Date(today.getTime()-today.getTimezoneOffset()*60000).toISOString().slice(0,10);
+  if(period==='custom') return {from:from||(ALL_ELEC[0]?.date||isoToday),to:to||isoToday};
+  if(period&&period!=='0') return {from:daysAgo(parseInt(period,10)),to:isoToday};
+  return {from:ALL_ELEC[0]?.date||isoToday,to:ALL_ELEC[ALL_ELEC.length-1]?.date||isoToday};
+}
 function applyElecFilter(){
   const period=document.getElementById('elec-period').value;
   const from=document.getElementById('elec-from').value;
@@ -438,31 +448,69 @@ function applyElecFilter(){
   const custom=period==='custom';
   document.getElementById('elec-custom-from-wrap').style.display=custom?'':'none';
   document.getElementById('elec-custom-to-wrap').style.display=custom?'':'none';
-  elecFiltered=filterWithOneBefore(ALL_ELEC,'date',period,from,to);
+  // Keep the preceding reading for delta calculation, but never treat its full
+  // interval as part of the selected period in KPIs or the heat-pump chart.
+  const range=getElecDateRange();
+  const inRange=ALL_ELEC.filter(r=>r.date>=range.from&&r.date<=range.to);
+  const first=inRange[0];
+  const idx=first?ALL_ELEC.findIndex(r=>r.date===first.date):-1;
+  elecFiltered=idx>0?[ALL_ELEC[idx-1],...inRange]:inRange;
   renderElec();
+}
+function buildMeterDailyForRange(range){
+  const daily=new Map();
+  for(let i=1;i<ALL_ELEC.length;i++){
+    const prev=ALL_ELEC[i-1], cur=ALL_ELEC[i];
+    const start=new Date(prev.date+'T12:00:00Z'), end=new Date(cur.date+'T12:00:00Z');
+    const days=Math.round((end-start)/86400000);
+    if(days<=0) continue;
+    const dc=cur.consumption_meter_kwh!=null&&prev.consumption_meter_kwh!=null?cur.consumption_meter_kwh-prev.consumption_meter_kwh:null;
+    const df=cur.feedin_meter_kwh!=null&&prev.feedin_meter_kwh!=null?cur.feedin_meter_kwh-prev.feedin_meter_kwh:null;
+    const validC=dc!=null&&dc>=0, validF=df!=null&&df>=0;
+    if(!validC&&!validF) continue;
+    const cPer=validC?dc/days:null, fPer=validF?df/days:null;
+    for(let n=1;n<=days;n++){
+      const d=new Date(start.getTime()+n*86400000).toISOString().slice(0,10);
+      if(d<range.from||d>range.to) continue;
+      const v=daily.get(d)||{consumption:null,feedin:null};
+      if(validC) v.consumption=cPer;
+      if(validF) v.feedin=fPer;
+      daily.set(d,v);
+    }
+  }
+  return daily;
 }
 
 function renderElec(){
   const mode=document.getElementById('elec-mode').value;
-  const data=elecFiltered;
+  const range=getElecDateRange();
+  const data=elecFiltered.filter(r=>r.date>=range.from&&r.date<=range.to).map(r=>{
+    const idx=ALL_ELEC.findIndex(x=>x.date===r.date);
+    if(idx<=0||r.days==null) return r;
+    const prev=ALL_ELEC[idx-1];
+    let overlap=0;
+    for(let n=1;n<=r.days;n++){const d=new Date(prev.date+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+n);const day=d.toISOString().slice(0,10);if(day>=range.from&&day<=range.to) overlap++;}
+    return {...r,days:overlap,delta:r.avgPerDay!=null?r.avgPerDay*overlap:null,deltaF:r.avgF!=null?r.avgF*overlap:null};
+  });
   destroyChart('chartElec');destroyChart('chartElecAvg');
   document.getElementById('elec-table-body').innerHTML='';
   const emptyEl=document.getElementById('elec-empty');
-  if(!data.length){emptyEl.style.display='';document.getElementById('elec-table').style.display='none';document.getElementById('elec-kpi').innerHTML='';return;}
-  emptyEl.style.display='none';document.getElementById('elec-table').style.display='';
-  const validC=data.filter(r=>r.delta!=null&&r.delta>=0);
-  const validF=data.filter(r=>r.deltaF!=null&&r.deltaF>=0);
-  const sumC=validC.reduce((a,r)=>a+r.delta,0);
-  const sumF=validF.reduce((a,r)=>a+r.deltaF,0);
-  const totalDays=validC.reduce((a,r)=>a+(r.days||0),0);
-  const avgC=totalDays>0?(sumC/totalDays).toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
-  const avgF=totalDays>0?(sumF/totalDays).toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
+  emptyEl.style.display=data.length?'none':'';
+  document.getElementById('elec-table').style.display=data.length?'':'none';
+  const meterDaily=buildMeterDailyForRange(range);
+  const rangeDays=Math.max(0,Math.round((new Date(range.to+'T12:00:00Z')-new Date(range.from+'T12:00:00Z'))/86400000)+1);
+  const knownC=[...meterDaily.values()].filter(v=>v.consumption!=null);
+  const knownF=[...meterDaily.values()].filter(v=>v.feedin!=null);
+  const sumC=knownC.reduce((a,v)=>a+v.consumption,0);
+  const sumF=knownF.reduce((a,v)=>a+v.feedin,0);
+  const avgC=rangeDays>0?(sumC/rangeDays).toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
+  const avgF=rangeDays>0?(sumF/rangeDays).toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2}):'—';
   document.getElementById('elec-kpi').innerHTML=
     `<div class="kpi red"><div class="val">${sumC.toLocaleString('de-DE')} kWh</div><div class="lbl">Verbrauch gesamt</div></div>`+
     `<div class="kpi red"><div class="val">${avgC} kWh</div><div class="lbl">Ø/Tag Verbrauch</div></div>`+
     `<div class="kpi green"><div class="val">${sumF.toLocaleString('de-DE')} kWh</div><div class="lbl">Einspeisung gesamt</div></div>`+
     `<div class="kpi green"><div class="val">${avgF} kWh</div><div class="lbl">Ø/Tag Einspeisung</div></div>`+
-    `<div class="kpi"><div class="val">${data.length}</div><div class="lbl">Ablesungen</div></div>`;
+    `<div class="kpi"><div class="val">${rangeDays}</div><div class="lbl">Kalendertage im Zeitraum</div></div>`+`<div class="kpi"><div class="val">${knownC.length}/${rangeDays}</div><div class="lbl">Tage mit Verbrauchs-Abdeckung</div></div>`;
   const titles={avg_per_day:'Ø Verbrauch & Einspeisung pro Tag',delta:'Verbrauch je Intervall (Δ)',meter:'Zählerstand'};
   document.getElementById('elec-chart1-title').textContent=titles[mode];
   let dsC,dsF;
@@ -515,35 +563,32 @@ function renderHpStats(){
   const mode=document.getElementById('hp-stats-mode')?.value||'both';
   if(!hpStatsLoaded) return;
 
-  const selected=[...elecFiltered].filter(r=>r.date).sort((a,b)=>a.date.localeCompare(b.date));
-  const from=selected.length?selected[0].date:null;
-  const to=selected.length?selected[selected.length-1].date:null;
-  const inRange=d=>!from||(!to||(d>=from&&d<=to));
+  const range=getElecDateRange();
+  const from=range.from, to=range.to;
+  const inRange=d=>d>=from&&d<=to;
   const rows=HP_DAILY_STATS.filter(r=>inRange(r.date));
 
-  // Build a daily household-consumption series from the absolute meter deltas.
-  // A meter delta belongs to the interval between two readings; its average/day
-  // is spread over those days and explicitly labelled as an interval average.
-  const meterDaily=new Map();
-  for(const r of selected){
-    const days=Number(r.days), avg=Number(r.avgPerDay);
-    if(!Number.isFinite(days)||days<=0||!Number.isFinite(avg)||avg<0) continue;
-    const end=new Date(r.date+'T12:00:00Z');
-    for(let i=0;i<days;i++){
-      const d=new Date(end.getTime()-(i+1)*86400000).toISOString().slice(0,10);
-      if(inRange(d)) meterDaily.set(d,avg);
-    }
-  }
+  // Meter intervals are clipped to the selected calendar range. The preceding
+  // October reading can establish the November 1 consumption without adding
+  // October consumption to the November totals.
+  const meterDaily=buildMeterDailyForRange(range);
 
-  const measuredHp=new Map();
+  // Keep measured daily totals separate from integrated graph estimates.
+  // Graph estimates remain useful interpolation anchors, but must not inflate
+  // the count of genuinely measured days in the KPI.
+  const knownHp=new Map();
+  const hpAnchors=[];
   for(const r of HP_DAILY_STATS){
     const v=Number(r.hp_kwh);
-    if(r.hp_kwh!=null&&Number.isFinite(v)&&v>=0) measuredHp.set(r.date,v);
+    if(r.hp_kwh==null||!Number.isFinite(v)||v<0) continue;
+    const estimated=r.hp_source==='graph-interpolated';
+    knownHp.set(r.date,{value:v,source:estimated?'interpolated':'measured'});
+    hpAnchors.push([r.date,v]);
   }
 
   // The household meter delta is the total electricity consumption, averaged
   // over the days in its reading interval. Keep the complete date span visible.
-  const allDates=[...new Set([...measuredHp.keys(),...meterDaily.keys()])].sort();
+  const allDates=[...new Set([...knownHp.keys(),...meterDaily.keys()])].sort();
   let dates=[];
   const rangeStart=from||allDates[0], rangeEnd=to||allDates[allDates.length-1];
   if(rangeStart&&rangeEnd){
@@ -552,14 +597,14 @@ function renderHpStats(){
     while(cursor<=last){dates.push(cursor.toISOString().slice(0,10));cursor.setUTCDate(cursor.getUTCDate()+1);}
   }
 
-  // Interpolate only between two real WP measurements. Before the first and
-  // after the last measurement, WP consumption is explicitly zero.
-  const anchors=[...measuredHp.entries()].sort((a,b)=>a[0].localeCompare(b[0]));
+  // Interpolate only between available measured or graph-estimated WP anchors.
+  // Before the first and after the last anchor, WP consumption is explicitly zero.
+  const anchors=hpAnchors.sort((a,b)=>a[0].localeCompare(b[0]));
   const dayNumber=d=>Date.parse(d+'T00:00:00Z')/86400000;
   const hpByDate=new Map();
   for(const d of dates){
     let value=0, source='outside-measurements-zero';
-    if(measuredHp.has(d)){value=measuredHp.get(d);source='measured';}
+    if(knownHp.has(d)){const known=knownHp.get(d);value=known.value;source=known.source;}
     else {
       let left=null,right=null;
       for(const a of anchors){if(a[0]<d)left=a;else if(a[0]>d){right=a;break;}}
@@ -574,13 +619,14 @@ function renderHpStats(){
   const hpTotal=hpValues.reduce((a,r)=>a+r.value,0);
   const hpDays=hpValues.filter(r=>r.source==='measured').length;
   const interpolatedDays=hpValues.filter(r=>r.source==='interpolated').length;
-  const meterValues=[...meterDaily.values()];
-  const householdTotal=meterValues.reduce((a,v)=>a+v,0);
+  const meterValues=[...meterDaily.values()].filter(v=>v.consumption!=null);
+  const householdTotal=meterValues.reduce((a,v)=>a+v.consumption,0);
   const householdDays=meterValues.length;
+  const selectedCalendarDays=Math.max(0,Math.round((new Date(to+'T12:00:00Z')-new Date(from+'T12:00:00Z'))/86400000)+1);
   const fmt=v=>v.toLocaleString('de-DE',{maximumFractionDigits:1});
 
   const hpSeries=dates.map(d=>hpByDate.get(d)?.value??0);
-  const totalSeries=dates.map(d=>meterDaily.has(d)?meterDaily.get(d):null);
+  const totalSeries=dates.map(d=>meterDaily.get(d)?.consumption??null);
   const inconsistentDays=dates.filter((d,i)=>totalSeries[i]!=null&&hpSeries[i]>totalSeries[i]+0.001);
   const withoutSeries=dates.map((d,i)=>totalSeries[i]!=null?Math.max(0,totalSeries[i]-hpSeries[i]):null);
   const kpi=document.getElementById('hp-stats-kpi');
@@ -589,7 +635,7 @@ function renderHpStats(){
     `<div class="kpi orange"><div class="val">${fmt(hpTotal)} kWh</div><div class="lbl">Wärmepumpe im Zeitraum · ${hpDays} Mess- und ${interpolatedDays} interpolierte Tage</div></div>`+
     `<div class="kpi orange"><div class="val">${hpValues.length?fmt(hpTotal/hpValues.length):'—'} kWh</div><div class="lbl">Wärmepumpe Ø je Kalendertag</div></div>`+
     `<div class="kpi red"><div class="val">${fmt(householdTotal)} kWh</div><div class="lbl">Gesamtverbrauch · ${householdDays} interpolierte Zählertage</div></div>`+
-    `<div class="kpi red"><div class="val">${householdDays?fmt(householdTotal/householdDays):'—'} kWh</div><div class="lbl">Gesamtverbrauch Ø je Tag aus Zählerintervallen</div></div>`;
+    `<div class="kpi red"><div class="val">${selectedCalendarDays?fmt(householdTotal/selectedCalendarDays):'—'} kWh</div><div class="lbl">Gesamtverbrauch Ø je Kalendertag im Zeitraum</div></div>`;
 
   const modeDatasets=[];
   const stacked=mode==='stacked';
@@ -628,7 +674,7 @@ function renderWater(){
   document.getElementById('water-kpi').innerHTML=
     `<div class="kpi blue"><div class="val">${sumM.toLocaleString('de-DE')} m³</div><div class="lbl">Verbrauch gesamt</div></div>`+
     `<div class="kpi blue"><div class="val">${avgD} m³</div><div class="lbl">Ø/Tag</div></div>`+
-    `<div class="kpi"><div class="val">${data.length}</div><div class="lbl">Ablesungen</div></div>`;
+    `<div class="kpi"><div class="val">${rangeDays}</div><div class="lbl">Kalendertage im Zeitraum</div></div>`+`<div class="kpi"><div class="val">${knownC.length}/${rangeDays}</div><div class="lbl">Tage mit Verbrauchs-Abdeckung</div></div>`;
   const avgRows=data.filter(r=>r.avgPerDay!=null&&r.delta>=0);
   makeTimeChart('chartWaterAvg',[
     {label:'Ø m³/Tag',data:avgRows.map(r=>({x:r.date,y:r.avgPerDay})),_rows:avgRows,borderColor:'#3b82f6',backgroundColor:'#bfdbfe55',tension:0.4,fill:true,pointRadius:5,type:'line'}
